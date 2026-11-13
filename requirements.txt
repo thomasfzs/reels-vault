@@ -1,0 +1,7 @@
+# Récolte (ingest.py) — Python 3.10 à 3.13 conseillé
+yt-dlp
+gallery-dl
+faster-whisper
+numpy
+# resumer.py / classer.py / construire.py n'ont besoin que de la bibliothèque
+# standard, plus la commande `claude` (Claude Code) connectée à ton compte.

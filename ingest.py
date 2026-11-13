@@ -13,8 +13,10 @@ relancer sans retraiter ce qui est déjà fait.
 
 Usage :
     python ingest.py mes_liens.txt
-    python ingest.py saved_posts.json --cookies chrome
+    python ingest.py saved_posts.json --cookies firefox
     python ingest.py liens.txt --limite 20        (pour tester sur 20 vidéos)
+
+Étape suivante : resumer.py (résumés par Claude), puis classer.py et construire.py.
 """
 
 import argparse
@@ -26,9 +28,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+
 # ---------------------------------------------------------------- configuration
 
-VAULT = Path.home() / "vault"          # modifiable avec --vault
+VAULT = Path(__file__).resolve().parent  # modifiable avec --vault
 MODELE_WHISPER = "small"               # tiny / base / small / medium
 PAUSE_ENTRE_VIDEOS = 3                 # secondes, pour ne pas se faire bloquer
 NB_IMAGES = 3
@@ -54,12 +58,12 @@ def verifier_outils():
     try:
         subprocess.run(YTDLP + ["--version"], capture_output=True, check=True)
     except (OSError, subprocess.CalledProcessError):
-        manquants.append("yt-dlp  ->  pip install yt-dlp")
+        manquants.append("yt-dlp  ->  pip install -r requirements.txt")
 
     try:
         subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
     except (OSError, subprocess.CalledProcessError):
-        manquants.append("ffmpeg  ->  winget install Gyan.FFmpeg  (puis rouvrir PowerShell)")
+        manquants.append("ffmpeg  ->  sudo pacman -S ffmpeg  /  winget install Gyan.FFmpeg")
 
     if manquants:
         log("ERREUR : outil(s) manquant(s)")
@@ -144,10 +148,21 @@ def telecharger_media(lien, dossier, nom, cookies):
             video if video.exists() else None)
 
 
+def decoder_audio(chemin):
+    """Décode l'audio en 16 kHz mono avec ffmpeg. On évite ainsi le décodeur
+    intégré de faster-whisper (PyAV), qui casse selon les versions."""
+    brut = subprocess.run(
+        ["ffmpeg", "-nostdin", "-loglevel", "error", "-i", str(chemin),
+         "-f", "s16le", "-ac", "1", "-ar", "16000", "-"],
+        capture_output=True, check=True, timeout=300,
+    ).stdout
+    return np.frombuffer(brut, np.int16).astype(np.float32) / 32768.0
+
+
 def transcrire(audio, modele):
     if audio is None:
         return ""
-    segments, _ = modele.transcribe(str(audio), vad_filter=True)
+    segments, _ = modele.transcribe(decoder_audio(audio), vad_filter=True)
     return " ".join(s.text.strip() for s in segments).strip()
 
 
