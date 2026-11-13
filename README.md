@@ -1,396 +1,154 @@
-# Transformer ses vidéos Instagram sauvegardées en base de données interrogeable
+# Reels Vault — un second cerveau à partir de tes Reels sauvegardés
 
-*Tuto complet, testé sur Windows 11. Zéro connaissance en code requise. Coût : 0 € si tu as déjà un abonnement Claude.*
+Tu as des centaines de Reels Instagram et de TikToks sauvegardés : des outils, des
+adresses, des astuces, des idées de voyage. Et tu ne retrouves jamais rien, parce
+que tout est enfermé dans des vidéos qu'aucune recherche ne sait lire.
 
----
+Reels Vault télécharge chaque vidéo, la **transcrit** en local, la fait **résumer
+par Claude** (qui lit aussi le texte incrusté dans les images), la **range par
+thèmes**, et te donne trois façons de t'en servir :
 
-## Le problème
+- **`vault.html`** : une page hors ligne avec recherche instantanée et filtres par thème ;
+- **un coffre Obsidian** : une note par vidéo, reliées à leurs thèmes (vue graphe) ;
+- **`index.md` + `CLAUDE.md`** : tu poses tes questions à Claude en langage normal
+  (« je pars dans les Alpes, ressors-moi tout ce que j'ai gardé »).
 
-Tu as des centaines de Reels sauvegardés. Des restos, des adresses, des astuces, des idées de voyage. Et tu ne retrouves jamais rien, parce que tout est enfermé dans des vidéos qu'aucune recherche ne peut lire.
-
-À la fin de ce tuto, tu pourras demander en langage normal : *« je pars au Japon, sors-moi tout ce que j'ai gardé »* — et obtenir la liste, avec les adresses, les horaires et les prix.
-
-Le principe : chaque vidéo est **téléchargée, transcrite et résumée**, puis rangée dans une base de fichiers texte. Et une fois le système en place, tu partages un Reel depuis ton téléphone et il s'ajoute tout seul pendant la nuit.
-
----
-
-## Ce que ça coûte vraiment
-
-Le montage d'origine (celui qui a tourné sur X) repose sur un agent nommé Hermes, branché à une clé API facturée au token, sur une machine allumée en permanence.
-
-La version de ce tuto ne coûte **rien de plus** qu'un abonnement Claude Pro, parce qu'elle remplace chaque brique payante par un équivalent gratuit :
-
-| Le montage d'origine | Ce qu'on utilise à la place | Coût |
-|---|---|---|
-| Hermes + clé API | **Claude Cowork** (inclus dans Pro) | 0 € |
-| Agent iMessage 24h/24 | **Un raccourci iPhone + une tâche planifiée** | 0 € |
-| Serveur allumé en permanence | **Ton PC, quand il est allumé** | 0 € |
-| Transcription par API | **Whisper en local** | 0 € |
-| Téléchargement des vidéos | **yt-dlp** | 0 € |
-
-**La seule vraie limite** : les quotas d'usage de Claude. Compter quelques centaines de vidéos par session confortablement. Traiter 10 000 vidéos d'un coup n'est pas réaliste sur un abonnement Pro — mais 300 fiches bien rangées servent davantage que 10 000 en vrac.
+> Projet basé sur le tuto [sosoj92/reels-vault](https://github.com/sosoj92/reels-vault)
+> (licence MIT). La récolte (`ingest.py`) vient de là. Tout ce qui suit la
+> transcription a été réécrit : résumés et classement par Claude Code, arborescence
+> de thèmes, notes Obsidian, nouvelle page de consultation.
 
 ---
 
-## Ce qu'il te faut
+## Comment ça marche
 
-- Un PC Windows
-- Un abonnement **Claude Pro**
-- **Firefox** (et non Chrome — l'explication est plus bas, c'est important)
-- Un iPhone, pour la partie « envoyer depuis son téléphone » (facultatif)
+```
+liens (export Instagram, inbox.txt…)
+   │
+   ▼  ingest.py ─── yt-dlp (vidéo + description) · Whisper (audio → texte) · ffmpeg (3 images)
+raw/*.md + images/                       ← une fiche brute par vidéo
+   │
+   ▼  resumer.py ── Claude : titre, résumé concret, infos à retenir, mots-clés
+resumes.json                             (lit les images quand il n'y a pas de voix off)
+   │
+   ▼  classer.py ── Claude : déduit une arborescence domaine › thème, range chaque fiche
+taxonomie.json
+   │
+   ▼  construire.py ── sans IA, instantané
+index.md · vault.html · fiches/ · themes/
+```
+
+Chaque étape est **relançable** : elle ne traite que ce qui n'a pas encore été fait.
+Tu peux couper avec `Ctrl+C` et relancer la même commande plus tard.
+
+**Coût** : 0 € de plus qu'un abonnement Claude. Les résumés passent par
+`claude -p` (Claude Code en mode non interactif), donc par ton abonnement : pas de
+clé API. Whisper et yt-dlp tournent en local.
+
+Pour ménager tes quotas, `resumer.py` utilise **Claude Haiku** avec un effort
+minimal, traite les fiches par lots de 5 et n'envoie les images (réduites à
+512 px, en un seul envoi) que quand le texte ne suffit pas. Chaque appel est noté
+dans `conso.jsonl`. Pour 216 fiches, ça a coûté l'équivalent de 1,60 $ au tarif
+API. Avec `--images ocr`, les images sont lues en local par tesseract : c'est
+encore moins cher, mais nettement moins précis.
 
 ---
 
-## Étape 1 — Installer les outils
+## Installation
 
-Ouvre **PowerShell** (touche Windows, puis tape « powershell ») et colle ces commandes **une par une**, en appuyant sur Entrée entre chaque.
+Il te faut Python (3.10 à 3.13), ffmpeg, et [Claude Code](https://claude.com/claude-code)
+connecté à ton compte (la commande `claude` doit répondre dans un terminal).
 
-```
-winget install Python.Python.3.12
-```
+**Linux**
 
-```
-pip install yt-dlp faster-whisper gallery-dl
-```
-
-```
-winget install Gyan.FFmpeg
+```bash
+sudo pacman -S ffmpeg        # ou apt install ffmpeg
+uv venv --python 3.12 .venv  # ou python -m venv .venv
+uv pip install -r requirements.txt
 ```
 
-**Ferme complètement PowerShell et rouvre-le.** Sans ça, Windows ne trouvera pas les nouveaux programmes.
-
-Vérifie que tout répond :
+**Windows**
 
 ```
-python -m yt_dlp --version
+winget install Python.Python.3.12 Gyan.FFmpeg
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
 ```
-
-```
-ffmpeg -version
-```
-
-Le premier affiche une date, le second un pavé de texte. Si l'un des deux dit « commande introuvable », l'installation n'est pas passée — reprends-la avant d'aller plus loin.
-
-> **Des lignes rouges pendant l'installation ?** C'est normal. `pip` signale souvent des conflits de version avec d'autres programmes déjà présents. Tant que tu lis `Successfully installed` à la fin, tout va bien.
 
 ---
 
-## Étape 2 — Se connecter à Instagram… avec Firefox
+## Utilisation
 
-C'est **le** piège du projet, et celui qui fait abandonner la plupart des gens.
+### 1. Récupérer ses liens
 
-Instagram refuse de montrer ses Reels à qui n'est pas connecté. Le script doit donc emprunter le cookie de connexion de ton navigateur. Sauf que **depuis Chrome 127, Google chiffre ses cookies d'une façon que yt-dlp ne sait pas déchiffrer sous Windows**. Tu obtiens l'erreur `Failed to decrypt with DPAPI`, et absolument rien ne fonctionne.
+Instagram : **Paramètres → Centre des comptes → Vos informations et autorisations →
+Télécharger vos informations**, format **JSON**. Les fichiers utiles sont
+`saved_posts.json` et `saved_collections.json`. N'importe quel fichier texte qui
+contient des liens Instagram ou TikTok marche aussi (`inbox.txt`, par exemple).
 
-Il n'y a pas de contournement côté Chrome. La solution :
+### 2. Récolter et transcrire
 
-```
-winget install Mozilla.Firefox
-```
-
-Ouvre Firefox, va sur **instagram.com**, connecte-toi, puis **ferme complètement Firefox** — Windows verrouille le fichier de cookies tant que le navigateur tourne.
-
-Teste avant d'aller plus loin :
-
-```
-python -m yt_dlp --cookies-from-browser firefox --dump-json --skip-download "https://www.instagram.com/reel/UN_REEL_QUELCONQUE/"
+```bash
+.venv/bin/python ingest.py saved_posts.json --cookies firefox --limite 10
 ```
 
-Un déluge de texte illisible = c'est gagné. Une erreur = inutile de continuer, il faut régler ça d'abord.
+Commence par 10 vidéos, ouvre une fiche dans `raw/` et vérifie la transcription,
+puis relance sans `--limite`. Compter 20 à 40 secondes par vidéo. Le premier
+lancement télécharge le modèle Whisper (~500 Mo).
+
+### 3. Résumer, classer, construire
+
+```bash
+python resumer.py      # Claude résume chaque fiche → resumes.json
+python classer.py      # Claude range les fiches par thèmes → taxonomie.json
+python construire.py   # génère index.md, vault.html, fiches/ et themes/
+```
+
+`resumer.py --limite 10` pour tester, `--refaire <id>` pour refaire une fiche.
+`classer.py --refaire` reconstruit l'arborescence de zéro, ce qui est utile quand la
+base a beaucoup grossi.
+
+### 4. Consulter
+
+- **`vault.html`** : double-clic, c'est tout. Ça marche hors ligne et sur téléphone.
+- **Obsidian** : « Ouvrir un dossier comme coffre » sur ce dossier, puis `Ctrl+G`
+  pour le graphe. Les notes `fiches/` et `themes/` sont **régénérées** à chaque
+  `construire.py` : n'y écris pas de notes perso.
+- **Claude** : ouvre ce dossier dans Claude Code (ou Cowork). `CLAUDE.md` lui dit
+  de partir de `index.md` et de ne rien inventer. Par exemple :
+  > Quels outils open source j'ai gardés pour mon home lab ?
+  > Organise-moi un week-end vélo avec tout ce que j'ai sauvegardé sur les Alpes.
 
 ---
 
-## Étape 3 — Récupérer ses liens
+## Les pièges connus
 
-Sur Instagram : **Paramètres → Centre des comptes → Vos informations et autorisations → Télécharger vos informations**. Choisis le format **JSON**. Le fichier arrive par mail, parfois sous 48 h.
-
-Dézippe-le, puis **déplace le dossier dans un endroit sûr** — pas dans Téléchargements, où il finira par disparaître.
-
-Deux fichiers t'intéressent :
-
-- `saved_posts.json` — tes posts sauvegardés
-- `saved_collections.json` — tes posts rangés en collections
-
-> Traite les deux, l'un après l'autre. Le script tient un journal et ne retraitera jamais deux fois la même vidéo.
-
----
-
-## Étape 4 — Le script de récolte
-
-Crée un dossier `Vault` dans ton profil utilisateur et places-y **`ingest.py`** (lien de téléchargement en bas de page).
-
-Ce qu'il fait, pour chaque lien :
-
-1. récupère la description et les métadonnées via **yt-dlp**
-2. télécharge l'audio et le transcrit en local avec **Whisper**
-3. extrait trois images de la vidéo
-4. écrit une fiche Markdown dans `raw/`
-5. note son avancement, pour pouvoir reprendre après une interruption
-
-**Commence par 10 vidéos**, jamais par la totalité :
-
-```
-cd "$HOME\Vault"
-```
-
-```
-python ingest.py "CHEMIN\VERS\saved_posts.json" --vault "$HOME\Vault" --cookies firefox --limite 10
-```
-
-Le premier lancement télécharge le modèle Whisper (500 Mo, une seule fois) — plusieurs minutes de silence, c'est normal.
-
-Ouvre ensuite une fiche dans `raw/` et **lis la section « Transcription audio »**. C'est le moment décisif :
-
-- **Elle est riche et cohérente** → parfait, tout le contenu utile est dans le texte. Tu peux lancer la totalité.
-- **Elle est vide ou incompréhensible** → tes Reels sont sur musique de fond, l'information est dans le texte incrusté à l'image. Il faudra faire lire les images extraites par Claude, ce qui consomme beaucoup plus de quota.
-
-Si le test est concluant, lance tout en retirant `--limite 10`. Compter **20 à 40 secondes par vidéo** : environ 1 h 30 pour 200 Reels. Tu peux couper avec `Ctrl+C` et relancer la même commande plus tard, il reprend où il s'était arrêté.
-
-> **Beaucoup d'échecs sur des liens en `/p/` ?** Ce sont des carrousels (des photos, pas des vidéos) : `gallery-dl` prend le relais, à condition de l'avoir installé à l'étape 1. Et si tes liens en échec commencent par `B5`, `B6`… ce sont des posts de 2019-2020, souvent supprimés depuis. Irrécupérables, et sans grande valeur.
+1. **Cookies Instagram** : beaucoup de posts ne s'affichent qu'une fois connecté.
+   Connecte-toi à instagram.com dans **Firefox**, ferme-le, puis passe
+   `--cookies firefox`. Sous Windows, Chrome chiffre ses cookies d'une façon que
+   yt-dlp ne sait pas lire (`Failed to decrypt with DPAPI`).
+2. **Carrousels** (`/p/…`) : ce sont des photos, pas des vidéos. C'est `gallery-dl`
+   qui les récupère, et Claude lit les images.
+3. **Posts supprimés** : sur un vieux stock, compte facilement un tiers de pertes
+   (ici, 224 sur 791). Il n'y a rien à faire.
+4. **Rythme** : Instagram bloque si on va trop vite. Sur plusieurs centaines de
+   posts, mieux vaut des lots de 50 étalés dans le temps.
+5. **faster-whisper et PyAV** : selon les versions, le décodeur audio intégré
+   plante. `ingest.py` décode donc l'audio avec ffmpeg.
 
 ---
 
-## Étape 5 — Transformer les transcriptions en index
-
-À ce stade, tu as des centaines de fiches brutes, longues et brouillonnes. Il faut les condenser.
-
-Installe **Claude Desktop** depuis **claude.ai/download** — surtout pas depuis le Microsoft Store, les versions tierces ne gèrent pas Cowork. Sous Windows, Cowork exige la fonctionnalité « Plateforme de machine virtuelle » ; si l'application refuse de l'ouvrir, lance ceci dans un terminal **administrateur**, puis redémarre :
-
-```
-Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All
-```
-
-Ouvre Cowork, donne-lui le dossier `Vault`, et colle cette consigne :
-
-```
-Tu travailles dans le dossier de mon Vault.
-
-Objectif : construire un index consultable de mes vidéos Instagram sauvegardées.
-
-Le dossier `raw` contient une fiche .md par vidéo, avec sa source, son auteur,
-sa description et la transcription de l'audio.
-
-Travaille par lots de 25 fiches. Pour chaque fiche :
-- résume en 2 à 4 lignes ce qu'elle apporte CONCRÈTEMENT : les noms cités, les
-  titres recommandés, les lieux, les adresses, les prix, les horaires. Surtout
-  pas de généralité du type "cette vidéo parle de productivité".
-- attribue 1 à 3 thèmes. N'utilise aucune liste prédéfinie : déduis les thèmes
-  de ce que tu lis, et réutilise les mêmes libellés d'une fiche à l'autre pour
-  rester cohérent.
-- si une fiche est trop pauvre pour un vrai résumé, signale-le plutôt que
-  d'inventer.
-
-Écris le résultat dans `index.md`, en AJOUTANT à la fin à chaque lot (ne réécris
-jamais le fichier entier). Format de chaque entrée :
-
-### <titre court et parlant>
-- lien : <url>
-- auteur : <auteur>
-- thèmes : <thème1>, <thème2>
-- contenu : <le résumé concret>
-
-Tiens à jour un fichier `progression.txt` avec le nom de la dernière fiche
-traitée, pour pouvoir reprendre plus tard.
-
-Fais le premier lot de 25, puis arrête-toi et dis-moi combien il en reste.
-```
-
-Réponds ensuite **« continue »** à la fin de chaque lot. Compter une dizaine de lots pour 250 fiches. Si tu atteins ta limite d'usage, attends la réouverture et écris « reprends l'indexation à partir de progression.txt ».
-
-**Pourquoi un index plutôt que d'interroger les fiches brutes ?** Parce que faire relire 250 fiches complètes à chaque question épuiserait ton quota en trois requêtes. L'index tient dans une fraction de la place et suffit à 90 % des questions.
-
-**Ne décide pas des catégories à l'avance.** En laissant Claude les déduire, tu découvres ce que tu sauvegardes réellement — et c'est rarement ce qu'on croit.
-
----
-
-## Étape 6 — Une page pour consulter
-
-Demande à Cowork :
-
-```
-Crée une page `vault.html` à la racine du Vault. Contraintes :
-
-- un seul fichier, sans dépendance externe, qui marche hors ligne
-- les données lues depuis index.md et intégrées directement dans le fichier
-- une barre de recherche qui filtre en direct sur le titre, le contenu et l'auteur
-- des boutons de filtre par thème, avec le nombre d'entrées sur chacun
-- chaque entrée affiche titre, thèmes, résumé, et un lien cliquable vers le post
-- lisible sur téléphone aussi
-
-Crée aussi le script qui régénère cette page à partir de index.md.
-```
-
-Tu obtiens une page à ouvrir d'un double-clic : recherche instantanée, filtres, hors ligne, et **sans consommer une miette de quota**. C'est ce que tu utiliseras au quotidien.
-
----
-
-## Étape 7 — Envoyer une vidéo depuis son téléphone
-
-L'idée : ton téléphone dépose le lien dans un fichier, ton PC le traite tout seul.
-
-### Le raccourci iPhone
-
-Dans l'app **Raccourcis** :
-
-1. **+** en haut à droite
-2. Ajoute l'action **« Ajouter au fichier texte »**
-3. Dans le champ à côté de « Ajouter à la suite », choisis la variable **Entrée du raccourci**
-4. Dans **« Chemin du fichier »**, tape simplement `inbox.txt`
-5. Active **« Créer une nouvelle ligne »**
-6. Ouvre les détails (icône **ⓘ**) → active **« Afficher dans la feuille de partage »**, et limite les types acceptés à **URL**
-7. Nomme-le **« Envoyer au Vault »**
-
-À l'usage : sur un Reel, **Partager → Plus → Envoyer au Vault**. Ça marche aussi depuis TikTok, sans rien changer.
-
-> **N'essaie pas de passer par OneDrive.** Il se monte en **lecture seule** dans le sélecteur de fichiers d'iOS : le raccourci ne pourra jamais y écrire. Laisse le réglage sur `Shortcuts` et tape juste `inbox.txt` — le fichier se crée tout seul dans iCloud au premier envoi.
-
-### Côté PC
-
-Installe iCloud pour Windows :
-
-```
-winget install Apple.iCloud
-```
-
-**Ouvre l'application, connecte-toi avec ton identifiant Apple, et coche iCloud Drive.** L'installation seule ne suffit pas.
-
-Fais un premier envoi depuis ton téléphone, puis localise le fichier :
-
-```
-Get-ChildItem "$HOME\iCloudDrive" -Recurse -Filter "inbox.txt" | Select-Object FullName
-```
-
-Le chemin ressemblera à `...\iCloudDrive\iCloud~is~workflow~my~workflows\inbox.txt`.
-
-> **Fais un clic droit sur ce fichier → « Toujours conserver sur cet appareil ».** Sans ça, iCloud le garde dans le nuage et ton script lira une version périmée. C'est la cause n°1 des « ça ne marche plus ».
-
-### L'automatisation
-
-Crée le lanceur. **Remplace `CHEMIN_TROUVE_CI_DESSUS` par le chemin exact que la commande précédente t'a affiché**, puis colle le tout en une seule ligne :
-
-```
-Set-Content "$HOME\Vault\inbox.bat" -Encoding ASCII -Value '@echo off', 'cd /d "%USERPROFILE%\Vault"', 'python ingest.py "CHEMIN_TROUVE_CI_DESSUS" --vault "%USERPROFILE%\Vault" --cookies firefox'
-```
-
-Vérifie le résultat avant de continuer :
-
-```
-Get-Content "$HOME\Vault\inbox.bat"
-```
-
-Puis programme-le, une ligne à la fois :
-
-```
-$a = New-ScheduledTaskAction -Execute "$HOME\Vault\inbox.bat"
-```
-
-```
-$t = New-ScheduledTaskTrigger -Daily -At 6pm
-```
-
-```
-Register-ScheduledTask -TaskName "Vault Inbox" -Action $a -Trigger $t
-```
-
-```
-$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -WakeToRun
-```
-
-```
-Set-ScheduledTask -TaskName "Vault Inbox" -Settings $s
-```
-
-`StartWhenAvailable` rattrape les exécutions manquées : si ton PC est éteint à l'heure dite, la tâche se lancera au prochain démarrage.
-
-Dernière brique, dans Cowork :
-
-```
-Crée une tâche récurrente quotidienne à 8h :
-1. lire le dossier raw et repérer les fiches absentes de index.md
-2. les résumer avec le même format et le même vocabulaire de thèmes
-3. les ajouter à la fin de index.md, mettre à jour progression.txt
-4. régénérer vault.html
-S'il n'y a aucune nouvelle fiche, ne rien faire.
-```
-
-**La boucle est bouclée** : tu partages depuis ton lit, ton PC transcrit le soir, l'index se met à jour le lendemain matin.
-
----
-
-## Étape 8 — Interroger sa base
-
-Crée un fichier `CLAUDE.md` à la racine du Vault. Cowork le lit automatiquement au début de chaque session :
-
-```
-- Ce dossier est une base de vidéos Instagram et TikTok que j'ai sauvegardées.
-- Pour toute question sur mon contenu, commence TOUJOURS par lire index.md.
-- N'ouvre les fiches complètes de raw/ que si index.md ne suffit pas.
-- Ne mentionne jamais un lieu, un titre ou un conseil qui ne vient pas de mes
-  fiches. Si je n'ai rien sur un sujet, dis-le simplement.
-- Après toute modification de index.md, régénère vault.html.
-- Réponds en français.
-```
-
-Tu peux alors demander directement :
-
-> Je pars 7 jours au Japon. Organise-moi un circuit avec tout ce que j'ai gardé — lieux, restaurants, adresses. Dis-moi ce que tu écartes et pourquoi.
-
-> Qu'est-ce que je sauvegarde le plus sans jamais l'utiliser ?
-
-> Ressors-moi les pâtisseries parisiennes, classées par arrondissement.
-
-**Depuis ton téléphone** : dépose `index.md` et `vault.html` sur Google Drive, et interroge-les depuis l'app Claude avec le connecteur Drive activé.
-
----
-
-## Bonus — La carte du graphe
-
-C'est l'image qui a fait circuler le projet : un nuage de points reliés, chaque point une vidéo, chaque gros nœud un thème.
-
-Installe **Obsidian** (gratuit) :
-
-```
-winget install Obsidian.Obsidian
-```
-
-Au lancement, choisis **« Ouvrir un dossier comme coffre »** et sélectionne ton `Vault` — pas le coffre de démonstration créé par défaut.
-
-Lance ensuite **`graphe.py`** (lien en bas de page), qui ajoute les liens `[[Thème]]` à chaque fiche et crée une note par thème :
-
-```
-python graphe.py --vault "$HOME\Vault"
-```
-
-Puis `Ctrl+G` dans Obsidian. Monte **Repel** dans les réglages « Forces » pour aérer, et crée un groupe `path:themes` en couleur vive pour faire ressortir les thèmes.
-
-**Sois honnête avec toi-même** : c'est superbe, ça fait un excellent visuel, mais on s'en sert peu au quotidien. La page `vault.html` avec ses filtres est bien plus efficace pour retrouver quelque chose. Le graphe, c'est l'affiche du projet.
-
----
-
-## Les cinq pièges, résumés
-
-1. **Chrome ne fonctionne pas.** Erreur `DPAPI`, sans solution. Installe Firefox.
-2. **Ferme ton navigateur** avant de lancer le script. Windows verrouille le fichier de cookies.
-3. **OneDrive est en lecture seule** sur iPhone. Passe par iCloud pour la boîte de réception.
-4. **iCloud ne télécharge pas les fichiers tout seul.** Clic droit → « Toujours conserver sur cet appareil ».
-5. **Range ton export ailleurs que dans Téléchargements.** Il finira supprimé au pire moment.
-
----
-
-## Les limites, en toute franchise
-
-**Ce n'est pas de la magie, c'est de la transcription.** Si tes Reels n'ont pas de voix off, il n'y aura pas grand-chose à extraire — vérifie sur 10 vidéos avant d'en lancer 300.
-
-**Les quotas existent.** Ce montage tient sur un abonnement Pro parce qu'on ne fait relire que l'index. Traiter des dizaines de milliers de vidéos demanderait une clé API et un vrai budget.
-
-**Instagram limite le rythme.** Sur plusieurs centaines de posts, mieux vaut procéder par lots de 50 étalés sur quelques jours.
-
-**Une partie du contenu est irrécupérable.** Les posts supprimés ou passés en privé depuis que tu les avais enregistrés sont perdus. Sur un stock ancien, compte facilement un tiers de pertes.
-
----
-
-## Les fichiers
-
-- **`ingest.py`** — récolte et transcription
-- **`graphe.py`** — création des liens pour Obsidian
-
-*Tuto rédigé après un montage réel, du premier `winget install` jusqu'au circuit de voyage. Les pièges décrits ont tous été rencontrés pour de vrai.*
+## Fichiers
+
+| Fichier | Rôle |
+|---|---|
+| `ingest.py` | liens → fiches brutes (`raw/`) + images (`images/`) |
+| `resumer.py` | fiches brutes → résumés structurés (`resumes.json`) |
+| `classer.py` | résumés → arborescence de thèmes (`taxonomie.json`) |
+| `construire.py` | → `index.md`, `vault.html`, `fiches/`, `themes/` |
+| `gabarit_vault.html` | modèle de la page de consultation |
+| `commun.py` | lecture des fiches, appel de `claude -p` |
+| `CLAUDE.md` | consignes pour interroger la base avec Claude |
+
+Les données (vidéos transcrites, résumés, images) restent sur ta machine et ne
+sont pas versionnées (voir `.gitignore`).

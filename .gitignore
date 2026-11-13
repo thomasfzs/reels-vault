@@ -1,0 +1,26 @@
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+
+# Données personnelles du vault (générées, propres à chacun)
+raw/
+images/
+.temp/
+journal.json
+inbox.txt
+resumes.json
+taxonomie.json
+index.md
+vault.html
+fiches/
+themes/
+*.log
+*.tmp
+conso.jsonl
+
+# Réglages Obsidian (propres à chacun)
+.obsidian/
+
+# Anciennes versions des scripts (Ollama, ntfy), gardées en local
+_ancien/
