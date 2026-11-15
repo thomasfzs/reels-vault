@@ -1,6 +1,6 @@
 # Reels Vault — consignes pour Claude
 
-Ce dossier est le « second cerveau » de Thomas : ses Reels Instagram et TikTok
+Ce dossier est un « second cerveau » : les Reels Instagram et TikTok
 sauvegardés, transcrits et résumés.
 
 ## Répondre à une question sur le contenu

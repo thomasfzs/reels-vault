@@ -18,6 +18,20 @@ thèmes**, et te donne trois façons de t'en servir :
 > transcription a été réécrit : résumés et classement par Claude Code, arborescence
 > de thèmes, notes Obsidian, nouvelle page de consultation.
 
+## Démarrage rapide
+
+```bash
+git clone https://github.com/thomasfzs/reels-vault.git && cd reels-vault
+uv venv --python 3.12 .venv && uv pip install -r requirements.txt
+
+.venv/bin/python ingest.py saved_posts.json --cookies firefox --limite 10   # 1. récolte
+python resumer.py     # 2. résumés (Claude)
+python classer.py     # 3. thèmes (Claude)
+python construire.py  # 4. vault.html, index.md, coffre Obsidian
+```
+
+Puis ouvre `vault.html`, ou ce dossier dans Obsidian. Le détail de chaque étape est plus bas.
+
 ---
 
 ## Comment ça marche
@@ -48,7 +62,7 @@ clé API. Whisper et yt-dlp tournent en local.
 Pour ménager tes quotas, `resumer.py` utilise **Claude Haiku** avec un effort
 minimal, traite les fiches par lots de 5 et n'envoie les images (réduites à
 512 px, en un seul envoi) que quand le texte ne suffit pas. Chaque appel est noté
-dans `conso.jsonl`. Pour 216 fiches, ça a coûté l'équivalent de 1,60 $ au tarif
+dans `conso.jsonl`. À titre indicatif, environ 200 fiches coûtent l'équivalent de 1 à 2 $ au tarif
 API. Avec `--images ocr`, les images sont lues en local par tesseract : c'est
 encore moins cher, mais nettement moins précis.
 
@@ -111,8 +125,10 @@ base a beaucoup grossi.
 ### 4. Consulter
 
 - **`vault.html`** : double-clic, c'est tout. Ça marche hors ligne et sur téléphone.
-- **Obsidian** : « Ouvrir un dossier comme coffre » sur ce dossier, puis `Ctrl+G`
-  pour le graphe. Les notes `fiches/` et `themes/` sont **régénérées** à chaque
+- **Obsidian** : « Ouvrir un autre coffre » → « Ouvrir un dossier comme coffre »,
+  et choisis **ce dossier** (celui du projet). `construire.py` règle le graphe
+  (`Ctrl+G`) pour n'afficher que les fiches et les thèmes, avec une couleur par
+  domaine. Les notes `fiches/` et `themes/` sont **régénérées** à chaque
   `construire.py` : n'y écris pas de notes perso.
 - **Claude** : ouvre ce dossier dans Claude Code (ou Cowork). `CLAUDE.md` lui dit
   de partir de `index.md` et de ne rien inventer. Par exemple :
@@ -129,8 +145,8 @@ base a beaucoup grossi.
    yt-dlp ne sait pas lire (`Failed to decrypt with DPAPI`).
 2. **Carrousels** (`/p/…`) : ce sont des photos, pas des vidéos. C'est `gallery-dl`
    qui les récupère, et Claude lit les images.
-3. **Posts supprimés** : sur un vieux stock, compte facilement un tiers de pertes
-   (ici, 224 sur 791). Il n'y a rien à faire.
+3. **Posts supprimés** : sur un vieux stock, compte facilement un tiers de pertes.
+   Il n'y a rien à faire.
 4. **Rythme** : Instagram bloque si on va trop vite. Sur plusieurs centaines de
    posts, mieux vaut des lots de 50 étalés dans le temps.
 5. **faster-whisper et PyAV** : selon les versions, le décodeur audio intégré

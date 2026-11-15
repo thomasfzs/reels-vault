@@ -186,6 +186,35 @@ def ecrire_html(vault, fiches, arbo):
     (vault / "vault.html").write_text(page, encoding="utf-8")
 
 
+# ---------------------------------------------------------------- reglages Obsidian
+
+COULEURS_DOMAINES = [0xE07A5A, 0x4CC3A3, 0x6EA8FE, 0xE5B84B, 0xB57EDC,
+                     0xEF6F9A, 0x58B8D6, 0x9BC45B, 0xD98E4A, 0x8D9AA8]
+
+
+def regler_obsidian(vault, arbo):
+    """Prepare le coffre Obsidian : le graphe ne montre que fiches/ et themes/
+    (une couleur par domaine), et les dossiers techniques sont masques.
+    Seuls ces reglages-la sont modifies, le reste de ta config est garde."""
+    dossier = vault / ".obsidian"
+    dossier.mkdir(exist_ok=True)
+
+    graphe = charger_json(dossier / "graph.json", {})
+    graphe["search"] = "path:fiches OR path:themes"
+    graphe["colorGroups"] = [
+        {"query": f'path:"themes/{nom_de_fichier(d)}" OR [domaines:"{d}"]',
+         "color": {"a": 1, "rgb": COULEURS_DOMAINES[i % len(COULEURS_DOMAINES)]}}
+        for i, (d, _) in enumerate(arbo)
+    ]
+    (dossier / "graph.json").write_text(json.dumps(graphe, indent=2), encoding="utf-8")
+
+    appli = charger_json(dossier / "app.json", {})
+    filtres = set(appli.get("userIgnoreFilters", []))
+    filtres |= {"_ancien/", ".venv/", ".temp/"}
+    appli["userIgnoreFilters"] = sorted(filtres)
+    (dossier / "app.json").write_text(json.dumps(appli, indent=2), encoding="utf-8")
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--vault", default=str(DOSSIER_PROJET))
@@ -199,7 +228,9 @@ def main():
     ecrire_index(vault, fiches, arbo, description_de)
     ecrire_obsidian(vault, fiches, arbo, description_de)
     ecrire_html(vault, fiches, arbo)
+    regler_obsidian(vault, arbo)
     print(f"{len(fiches)} fiches -> index.md, vault.html, fiches/, themes/")
+    print(f"Obsidian : ouvre le dossier {vault.resolve()} comme coffre, puis Ctrl+G pour le graphe.")
 
 
 if __name__ == "__main__":

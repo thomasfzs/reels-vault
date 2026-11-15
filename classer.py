@@ -33,10 +33,10 @@ MODELE_ARBORESCENCE = "sonnet"
 FICHES_PAR_APPEL = 120
 NON_CLASSE = "Non classé"
 
-SYSTEME_ARBO = """Tu organises le "second cerveau" de Thomas : une base de Reels
-Instagram/TikTok qu'il a sauvegardes. On te donne une ligne par fiche
+SYSTEME_ARBO = """Tu organises un "second cerveau" personnel : une base de Reels
+Instagram/TikTok sauvegardes par une personne. On te donne une ligne par fiche
 (titre, mots-cles, format). Construis une arborescence a deux niveaux qui
-reflete ce qu'il sauvegarde VRAIMENT :
+reflete ce qu'elle sauvegarde VRAIMENT :
 
 - 6 a 12 "domaines" larges (ex. "Vélo & cyclisme", "Tech & logiciels").
 - Dans chaque domaine, 2 a 7 "themes" precis, chacun assez gros pour

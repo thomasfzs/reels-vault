@@ -39,7 +39,7 @@ MAX_IMAGES_VIDEO = 3
 MAX_IMAGES_CARROUSEL = 6
 MAX_CARACTERES_TEXTE = 6000
 
-SYSTEME = """Tu alimentes le "second cerveau" de Thomas : une base de ses Reels
+SYSTEME = """Tu alimentes un "second cerveau" personnel : une base de Reels
 Instagram et TikTok sauvegardes. Tu recois plusieurs fiches brutes (description
 du post, transcription audio automatique, et parfois des images a lire avec
 l'outil Read). Pour CHAQUE fiche, tu produis une entree structuree.
