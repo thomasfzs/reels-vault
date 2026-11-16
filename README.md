@@ -137,6 +137,45 @@ base a beaucoup grossi.
 
 ---
 
+## Remplissage automatique
+
+Une fois la base construite, `mettre_a_jour.py` fait tout d'un coup :
+
+1. il lit tes derniers posts **Enregistrés** directement sur Instagram, avec la
+   session de ton navigateur, plus les liens que tu aurais mis dans `inbox.txt` ;
+2. il ne garde que les nouveaux, puis enchaîne récolte, résumé, classement et
+   construction ;
+3. il t'envoie une notification de bureau quand des vidéos sont ajoutées.
+
+Tu n'as donc rien à changer à tes habitudes : tu enregistres un Reel dans Instagram,
+et il arrive dans le vault au passage suivant. Quand il n'y a rien de nouveau, le
+script s'arrête sans appeler Claude.
+
+```bash
+.venv/bin/python mettre_a_jour.py --compte ton_pseudo --cookies firefox
+```
+
+Pour le lancer chaque jour sous Linux, copie les deux fichiers de `systemd/`
+dans `~/.config/systemd/user/`, adapte les lignes marquées « À ADAPTER »
+(dossier, pseudo, navigateur, `PATH` vers la commande `claude`), puis :
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now reels-vault.timer
+```
+
+La mise à jour se fait à 20 h, ou au prochain démarrage si le PC était éteint.
+Le journal est dans `mise_a_jour.log`. Sous Windows, le Planificateur de tâches
+fait la même chose (déclencheur quotidien, option « Exécuter dès que possible
+si une exécution planifiée a été manquée »).
+
+**Cookies chiffrés** : Chrome, Brave et Edge sous Linux chiffrent leurs cookies
+avec une clé rangée dans le trousseau du système. Si yt-dlp affiche
+`cannot decrypt v11 cookies`, précise le trousseau : `--cookies "brave+gnomekeyring"`
+(ou `+kwallet6` sous KDE). Firefox n'a pas ce problème.
+
+---
+
 ## Les pièges connus
 
 1. **Cookies Instagram** : beaucoup de posts ne s'affichent qu'une fois connecté.

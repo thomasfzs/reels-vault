@@ -17,6 +17,7 @@ fiches/
 themes/
 *.log
 *.tmp
+.a_traiter.txt
 conso.jsonl
 
 # Réglages Obsidian (propres à chacun)
