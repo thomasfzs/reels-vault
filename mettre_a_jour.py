@@ -20,17 +20,24 @@ ce qui reste a faire et reprend a cette etape, sans tout recommencer.
 La premiere fois, il te demande ton pseudo Instagram et ton navigateur, et
 les garde dans config.json (non versionne).
 
+Premiere fois (ou gros rattrapage) : donne-lui l'export Instagram, tel quel
+(le .zip recu par mail, ou saved_posts.json) :
+
+    .venv/bin/python mettre_a_jour.py --export ~/Downloads/instagram-xxx.zip
+
 Options :
-    --max 300     verifier plus d'Enregistres (defaut 60), pour rattraper un retard
-    --oui         repondre oui a toutes les questions
+    --export FICHIER     prendre les liens dans l'export Instagram (zip ou json)
+    --max 300            verifier plus d'Enregistres (defaut 60)
+    --retenter-echecs    retenter aussi les posts qui avaient echoue
+    --oui                repondre oui a toutes les questions
 """
 
 import argparse
-import json
 import re
 import subprocess
 import sys
 import time
+import zipfile
 from pathlib import Path
 
 from commun import charger_json, demander_accord, sauver_json
@@ -38,6 +45,10 @@ from commun import charger_json, demander_accord, sauver_json
 DOSSIER = Path(__file__).resolve().parent
 PYTHON = sys.executable
 SECONDES_PAR_REEL = 30  # recolte + transcription, en moyenne
+CODE_BLOCAGE = 3        # code de sortie d'ingest.py quand Instagram bloque
+FICHIERS_EXPORT = ("saved_posts.json", "saved_collections.json")
+MOTIF_LIEN = re.compile(
+    r"https?://(?:www\.|vm\.|vt\.)?(?:tiktok\.com|instagram\.com)/[^\s\"'<>,\)\]]+")
 
 
 def titre_etape(numero, texte):
@@ -95,18 +106,41 @@ def enregistres_instagram(compte, cookies, maximum):
     return liens[:maximum]
 
 
-def chercher_nouveaux(config, maximum):
+def liens_export(chemin):
+    """Liens des posts enregistres, lus dans l'export Instagram. Accepte le
+    .zip tel quel (on n'y lit que les fichiers d'enregistres, sans rien
+    decompresser sur le disque) ou directement un fichier .json."""
+    chemin = Path(chemin).expanduser()
+    textes = []
+    if zipfile.is_zipfile(chemin):
+        with zipfile.ZipFile(chemin) as z:
+            for nom in z.namelist():
+                if nom.endswith(FICHIERS_EXPORT):
+                    textes.append(z.read(nom).decode("utf-8", errors="ignore"))
+    else:
+        textes.append(chemin.read_text(encoding="utf-8", errors="ignore"))
+    liens = [l.rstrip(".,;") for t in textes for l in MOTIF_LIEN.findall(t)]
+    return list(dict.fromkeys(liens))
+
+
+def chercher_nouveaux(config, args):
     journal = charger_json(DOSSIER / "journal.json", {})
-    deja_ok = {identifiant(l) for l, v in journal.items() if v.get("statut") == "ok"}
+    statuts_ignores = {"ok"} if args.retenter_echecs else {"ok", "echec"}
+    deja_vus = {identifiant(l) for l, v in journal.items() if v.get("statut") in statuts_ignores}
 
     candidats = []
-    print(f"Lecture de tes {maximum} derniers Enregistres sur Instagram...")
-    try:
-        candidats = enregistres_instagram(config["compte"], config.get("cookies"), maximum)
-        print(f"  {len(candidats)} posts lus.")
-    except Exception as e:  # noqa: BLE001
-        print(f"  Impossible de lire tes Enregistres : {e}")
-        print("  Verifie que tu es connecte a Instagram dans ton navigateur.")
+    if args.export:
+        print(f"Lecture de l'export : {args.export}")
+        candidats = liens_export(args.export)
+        print(f"  {len(candidats)} posts enregistres dans l'export.")
+    else:
+        print(f"Lecture de tes {args.max} derniers Enregistres sur Instagram...")
+        try:
+            candidats = enregistres_instagram(config["compte"], config.get("cookies"), args.max)
+            print(f"  {len(candidats)} posts lus.")
+        except Exception as e:  # noqa: BLE001
+            print(f"  Impossible de lire tes Enregistres : {e}")
+            print("  Verifie que tu es connecte a Instagram dans ton navigateur.")
     inbox = DOSSIER / "inbox.txt"
     if inbox.exists():
         liens_inbox = re.findall(r"https?://\S+", inbox.read_text(encoding="utf-8"))
@@ -114,7 +148,11 @@ def chercher_nouveaux(config, maximum):
             print(f"  + {len(liens_inbox)} lien(s) dans inbox.txt")
             candidats += liens_inbox
 
-    return [l for l in dict.fromkeys(candidats) if identifiant(l) not in deja_ok]
+    nouveaux = [l for l in dict.fromkeys(candidats) if identifiant(l) not in deja_vus]
+    echecs = sum(1 for l in candidats if journal.get(l, {}).get("statut") == "echec")
+    if echecs and not args.retenter_echecs:
+        print(f"  ({echecs} post(s) deja en echec ignores ; --retenter-echecs pour les retenter)")
+    return nouveaux
 
 
 # ---------------------------------------------------------------- etat du vault
@@ -134,8 +172,11 @@ def etat_du_vault():
 
 def main():
     p = argparse.ArgumentParser(description="Ajoute tes derniers Reels enregistres au vault.")
+    p.add_argument("--export", help="export Instagram (.zip tel quel, ou saved_posts.json)")
     p.add_argument("--max", type=int, default=60,
                    help="nombre d'Enregistres recents a verifier (defaut 60)")
+    p.add_argument("--retenter-echecs", action="store_true",
+                   help="retenter aussi les posts qui avaient echoue")
     p.add_argument("--oui", action="store_true", help="repondre oui a toutes les questions")
     args = p.parse_args()
     config = charger_config(args)
@@ -144,7 +185,7 @@ def main():
 
     # 1. chercher
     titre_etape(1, "Chercher les nouveaux reels")
-    nouveaux = chercher_nouveaux(config, args.max)
+    nouveaux = chercher_nouveaux(config, args)
     a_resumer, a_classer = etat_du_vault()
     print(f"\n  Nouveaux reels a recolter : {len(nouveaux)}")
     print(f"  Deja recoltes, pas encore resumes : {a_resumer}")
@@ -164,8 +205,12 @@ def main():
             a_traiter = DOSSIER / ".a_traiter.txt"
             a_traiter.write_text("\n".join(nouveaux) + "\n", encoding="utf-8")
             options = ["--cookies", config["cookies"]] if config.get("cookies") else []
-            lancer("ingest.py", str(a_traiter), *options)
+            code = lancer("ingest.py", str(a_traiter), *options)
             a_traiter.unlink(missing_ok=True)
+            if code == CODE_BLOCAGE:
+                print("\nLa recolte s'est arretee : Instagram bloque ou t'a deconnecte.")
+                print("On continue avec ce qui a deja ete recolte ; le reste sera repris")
+                print("la prochaine fois. Attends quelques heures avant de relancer.")
         else:
             print("Recolte sautee : ces reels seront proposes la prochaine fois.")
 

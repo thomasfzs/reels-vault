@@ -24,14 +24,16 @@ thèmes**, et te donne trois façons de t'en servir :
 git clone https://github.com/thomasfzs/reels-vault.git && cd reels-vault
 uv venv --python 3.12 .venv && uv pip install -r requirements.txt
 
-.venv/bin/python ingest.py saved_posts.json --cookies firefox --limite 10   # 1. récolte
-python resumer.py     # 2. résumés (Claude)
-python classer.py     # 3. thèmes (Claude)
-python construire.py  # 4. vault.html, index.md, coffre Obsidian
+# la première fois : donne-lui l'export Instagram tel quel (le .zip reçu par mail)
+.venv/bin/python mettre_a_jour.py --export ~/Downloads/instagram-ton_pseudo-xxxx.zip
 
 # ensuite, pour ajouter tes nouveaux Reels enregistrés :
 .venv/bin/python mettre_a_jour.py
 ```
+
+Il déroule toutes les étapes (récolte, résumés, thèmes, construction) en te
+demandant ton accord avant chacune. Pour poser des questions sur tes reels,
+ouvre le dossier dans Claude Code et tape `/reels ta question`.
 
 Puis ouvre `vault.html`, ou ce dossier dans Obsidian. Le détail de chaque étape est plus bas.
 
@@ -133,10 +135,15 @@ base a beaucoup grossi.
   (`Ctrl+G`) pour n'afficher que les fiches et les thèmes, avec une couleur par
   domaine. Les notes `fiches/` et `themes/` sont **régénérées** à chaque
   `construire.py` : n'y écris pas de notes perso.
-- **Claude** : ouvre ce dossier dans Claude Code (ou Cowork). `CLAUDE.md` lui dit
-  de partir de `index.md` et de ne rien inventer. Par exemple :
-  > Quels outils open source j'ai gardés pour mon home lab ?
-  > Organise-moi un week-end vélo avec tout ce que j'ai sauvegardé sur les Alpes.
+- **Claude, avec le skill `/reels`** : ouvre ce dossier dans Claude Code et pose
+  ta question après `/reels`. Claude cherche dans les fiches, répond uniquement
+  à partir d'elles et cite chaque fiche avec le lien du post. Par exemple :
+  > /reels quels outils open source j'ai gardés pour mon home lab ?
+  > /reels organise-moi un week-end vélo avec ce que j'ai sauvegardé sur les Alpes
+
+  Pour l'avoir depuis **n'importe quel dossier**, copie `.claude/skills/reels/`
+  dans `~/.claude/skills/` et remplace la ligne « Dossier du vault » par le
+  chemin complet de ton vault.
 
 ---
 
@@ -150,7 +157,9 @@ Quand tu en as envie, lance :
 ```
 
 La première fois, il te demande ton pseudo Instagram et le navigateur où tu es
-connecté, et les garde dans `config.json`. Ensuite, il déroule 5 étapes en
+connecté, et les garde dans `config.json`. Pour l'import initial (ou un gros
+rattrapage), donne-lui l'export Instagram avec `--export fichier.zip` : il lit
+le zip directement, sans que tu aies à le décompresser. Ensuite, il déroule 5 étapes en
 t'affichant où il en est :
 
 1. **Chercher** : il lit tes derniers posts **Enregistrés** (60 par défaut)
@@ -166,7 +175,13 @@ t'affichant où il en est :
 **Si tu refuses une étape, rien n'est perdu** : la fois suivante, il voit ce qui
 reste à résumer ou à classer et reprend à cette étape. Rien ne se lance tout seul.
 Pour rattraper un gros retard, utilise `--max 300` ; pour ne répondre à aucune
-question, `--oui`.
+question, `--oui`. Les posts déjà en échec (souvent supprimés) ne sont pas
+retentés, sauf avec `--retenter-echecs`.
+
+**Si Instagram bloque** (erreur 429, « patientez », vérification de compte) ou
+si tu n'es plus connecté, la récolte **s'arrête immédiatement** au lieu
+d'insister. Le post en cours n'est pas compté comme un échec : il sera repris
+la fois suivante. Attends quelques heures avant de relancer.
 
 `resumer.py` et `classer.py` affichent aussi leur estimation et demandent ton
 accord quand tu les lances seuls.
@@ -204,6 +219,7 @@ avec une clé rangée dans le trousseau du système. Si yt-dlp affiche
 | `classer.py` | résumés → arborescence de thèmes (`taxonomie.json`) |
 | `construire.py` | → `index.md`, `vault.html`, `fiches/`, `themes/` |
 | `mettre_a_jour.py` | lance tout dans l'ordre pour les nouveaux Reels, avec ta validation |
+| `.claude/skills/reels/` | le skill `/reels` pour interroger le vault avec Claude |
 | `gabarit_vault.html` | modèle de la page de consultation |
 | `commun.py` | lecture des fiches, appel de `claude -p` |
 | `CLAUDE.md` | consignes pour interroger la base avec Claude |

@@ -40,6 +40,15 @@ NB_IMAGES = 3
 YTDLP = [sys.executable, "-m", "yt_dlp"]
 GALLERYDL = [sys.executable, "-m", "gallery_dl"]
 
+# messages qui veulent dire « Instagram te bloque » (ou « tu n'es plus
+# connecte ») : dans ce cas on s'arrete tout de suite au lieu d'insister
+MOTIF_BLOCAGE = re.compile(
+    r"429|too many requests|rate.?limit|please wait a few minutes|"
+    r"checkpoint|challenge_required|login_required|redirect to login|accounts/login",
+    re.I,
+)
+CODE_BLOCAGE = 3  # code de sortie quand on s'arrete pour un blocage
+
 MOTIF_LIEN = re.compile(
     r"https?://(?:www\.|vm\.|vt\.)?(?:tiktok\.com|instagram\.com)/[^\s\"'<>,\)\]]+"
 )
@@ -179,7 +188,7 @@ def telecharger_carrousel(lien, dossier_images, nom, cookies):
     commande = GALLERYDL + ["--write-metadata", "-D", str(cible)]
     commande += options_cookies(cookies)
     commande.append(lien)
-    subprocess.run(commande, capture_output=True, timeout=300)
+    resultat = subprocess.run(commande, capture_output=True, text=True, timeout=300)
 
     images = sorted(
         p for p in cible.glob("*")
@@ -196,7 +205,17 @@ def telecharger_carrousel(lien, dossier_images, nom, cookies):
         if legende:
             break
 
-    return images, legende
+    return images, legende, (resultat.stderr or "").strip()
+
+
+class BlocageInstagram(RuntimeError):
+    pass
+
+
+def verifier_blocage(*messages):
+    for message in messages:
+        if message and MOTIF_BLOCAGE.search(message):
+            raise BlocageInstagram(message.replace("\n", " ")[:200])
 
 
 def extraire_images(video, dossier_images, nom, duree):
@@ -299,6 +318,7 @@ def main():
             except Exception as e:
                 meta = {}  # carrousel, ou probleme d'acces
                 erreur_meta = str(e).replace("\n", " ")[:300]
+                verifier_blocage(erreur_meta)
 
             audio = video = None
             if meta.get("duration"):
@@ -311,9 +331,10 @@ def main():
             else:
                 genre = "carrousel"
                 transcription = ""
-                images, legende = telecharger_carrousel(lien, dossier_images,
-                                                        nom, args.cookies)
+                images, legende, erreur_gallery = telecharger_carrousel(
+                    lien, dossier_images, nom, args.cookies)
                 if not images:
+                    verifier_blocage(erreur_gallery)
                     raise RuntimeError(
                         "ni vidéo ni image récupérée | yt-dlp : "
                         + (erreur_meta or "aucun message")
@@ -330,6 +351,13 @@ def main():
 
             journal[lien] = {"statut": "ok", "fiche": f"{nom}.md"}
             reussites += 1
+        except BlocageInstagram as erreur:
+            # pas marque en echec : il sera retente la prochaine fois
+            sauver_journal(chemin_journal, journal)
+            log(f"ARRET : Instagram semble bloquer ou t'a deconnecte ({erreur})")
+            log(f"Terminé — {reussites} réussites avant l'arrêt. Attends quelques heures,")
+            log("verifie que tu es toujours connecte dans ton navigateur, puis relance.")
+            sys.exit(CODE_BLOCAGE)
         except Exception as erreur:  # noqa: BLE001 — on continue quoi qu'il arrive
             log(f"    échec : {erreur}")
             journal[lien] = {"statut": "echec", "erreur": str(erreur)[:300]}
