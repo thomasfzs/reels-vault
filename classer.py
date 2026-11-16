@@ -23,8 +23,8 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from commun import (CONSO, DOSSIER_PROJET, MODELE_DEFAUT, appeler_claude,
-                    charger_json, sauver_json)
+from commun import (CONSO, DOSSIER_PROJET, MODELE_DEFAUT, afficher_estimation,
+                    appeler_claude, charger_json, demander_accord, sauver_json)
 
 # construire l'arborescence demande du recul : un seul appel, sur un modele
 # plus capable. Ranger les fiches dedans est simple : modele leger.
@@ -32,6 +32,12 @@ MODELE_ARBORESCENCE = "sonnet"
 
 FICHES_PAR_APPEL = 120
 NON_CLASSE = "Non classé"
+
+# pour l'estimation, d'apres les mesures de conso.jsonl
+CARACTERES_PAR_TOKEN = 2
+TOKENS_FIXES_PAR_APPEL = 600
+TOKENS_SORTIE_PAR_FICHE = 110
+TOKENS_SORTIE_ARBORESCENCE = 2500
 
 SYSTEME_ARBO = """Tu organises un "second cerveau" personnel : une base de Reels
 Instagram/TikTok sauvegardes par une personne. On te donne une ligne par fiche
@@ -49,7 +55,14 @@ reflete ce qu'elle sauvegarde VRAIMENT :
 SYSTEME_RANGEMENT = """Tu ranges des fiches dans une arborescence de themes
 deja definie. Pour chaque fiche, choisis 1 theme (2 au maximum si la fiche
 releve vraiment de deux sujets), en utilisant EXACTEMENT les noms de themes
-fournis. Renvoie une entree par fiche, avec le meme id."""
+fournis. Renvoie une entree par fiche, avec le meme id.
+
+Prefere TOUJOURS un theme existant, meme approximatif. Seulement si une fiche
+ne rentre vraiment dans aucun, tu peux creer un nouveau theme : declare-le
+dans "nouveaux_themes" (nom court en francais, description d'une ligne, et le
+domaine ou le ranger, existant de preference, ou nouveau si aucun ne
+convient), puis utilise son nom pour la fiche. Ne cree pas deux themes pour
+le meme sujet."""
 
 SCHEMA_ARBO = {
     "type": "object",
@@ -92,7 +105,19 @@ SCHEMA_RANGEMENT = {
                 },
                 "required": ["id", "themes"],
             },
-        }
+        },
+        "nouveaux_themes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "domaine": {"type": "string"},
+                    "nom": {"type": "string"},
+                    "description": {"type": "string"},
+                },
+                "required": ["domaine", "nom", "description"],
+            },
+        },
     },
     "required": ["affectations"],
 }
@@ -110,20 +135,59 @@ def texte_arborescence(domaines):
     return "\n".join(lignes)
 
 
+def prompt_arborescence(resumes):
+    return "\n".join(ligne_fiche(i, r) for i, r in resumes.items())
+
+
 def construire_arborescence(resumes, modele):
-    prompt = "\n".join(ligne_fiche(i, r) for i, r in resumes.items())
     print(f"Construction de l'arborescence a partir de {len(resumes)} fiches...")
-    return appeler_claude(prompt, SYSTEME_ARBO, SCHEMA_ARBO, modele=modele)["domaines"]
+    return appeler_claude(prompt_arborescence(resumes), SYSTEME_ARBO, SCHEMA_ARBO,
+                          modele=modele)["domaines"]
 
 
-def ranger_lot(idents, resumes, domaines, modele):
-    prompt = (
+def prompt_rangement(idents, resumes, domaines):
+    return (
         "Arborescence :\n" + texte_arborescence(domaines)
         + "\n\nFiches a ranger (id | titre | mots-cles | format) :\n"
         + "\n".join(ligne_fiche(i, resumes[i]) for i in idents)
     )
-    rep = appeler_claude(prompt, SYSTEME_RANGEMENT, SCHEMA_RANGEMENT, modele=modele)
-    return rep["affectations"]
+
+
+def ranger_lot(idents, resumes, domaines, modele):
+    rep = appeler_claude(prompt_rangement(idents, resumes, domaines),
+                         SYSTEME_RANGEMENT, SCHEMA_RANGEMENT, modele=modele)
+    return rep["affectations"], rep.get("nouveaux_themes", [])
+
+
+def ajouter_theme(domaines, proposition):
+    """Ajoute un theme propose par Claude (et son domaine s'il est nouveau).
+    Renvoie True s'il a vraiment ete cree."""
+    nom = proposition["nom"].strip()
+    if not nom or any(t["nom"] == nom for d in domaines for t in d["themes"]):
+        return False
+    domaine = next((d for d in domaines if d["nom"] == proposition["domaine"].strip()), None)
+    if domaine is None:
+        domaine = {"nom": proposition["domaine"].strip(), "themes": []}
+        domaines.append(domaine)
+    domaine["themes"].append({"nom": nom, "description": proposition["description"].strip()})
+    return True
+
+
+def estimer(resumes, taxo, a_ranger):
+    """Estime les tokens sans rien envoyer. Renvoie (appels, entree, sortie)."""
+    appels = entree = sortie = 0
+    domaines = taxo.get("domaines") or []
+    if not domaines:  # premier lancement : l'arborescence est a construire
+        appels += 1
+        entree += TOKENS_FIXES_PAR_APPEL + len(prompt_arborescence(resumes)) // CARACTERES_PAR_TOKEN
+        sortie += TOKENS_SORTIE_ARBORESCENCE
+        domaines = [{"nom": "x" * 30, "themes": [{"nom": "x" * 30, "description": "x" * 80}] * 4}] * 10
+    for i in range(0, len(a_ranger), FICHES_PAR_APPEL):
+        lot = a_ranger[i:i + FICHES_PAR_APPEL]
+        appels += 1
+        entree += TOKENS_FIXES_PAR_APPEL + len(prompt_rangement(lot, resumes, domaines)) // CARACTERES_PAR_TOKEN
+        sortie += TOKENS_SORTIE_PAR_FICHE * len(lot)
+    return appels, entree, sortie
 
 
 def main():
@@ -133,6 +197,8 @@ def main():
     p.add_argument("--modele-arborescence", default=MODELE_ARBORESCENCE)
     p.add_argument("--refaire", action="store_true",
                    help="reconstruire l'arborescence depuis zero")
+    p.add_argument("--oui", action="store_true",
+                   help="ne pas demander de confirmation avant d'appeler Claude")
     args = p.parse_args()
 
     vault = Path(args.vault)
@@ -144,24 +210,44 @@ def main():
     chemin = vault / "taxonomie.json"
     taxo = {} if args.refaire else charger_json(chemin, {})
 
+    a_ranger = [i for i in resumes if i not in taxo.get("affectations", {})]
+    if taxo.get("domaines") and not a_ranger:
+        print("Toutes les fiches sont deja rangees.")
+        return
+
+    appels, entree, sortie = estimer(resumes, taxo, a_ranger)
+    if not taxo.get("domaines"):
+        print(f"Premier classement : Claude ({args.modele_arborescence}) va inventer "
+              f"l'arborescence, puis ranger les {len(a_ranger)} fiches.")
+    else:
+        print(f"{len(a_ranger)} fiche(s) a ranger dans les themes existants.")
+    afficher_estimation(appels, entree, sortie, args.modele)
+    if not demander_accord("Lancer le classement ?", args.oui):
+        print("Rien n'a ete envoye. Relance quand tu veux : on reprendra ici.")
+        return
+
     if not taxo.get("domaines"):
         taxo = {"domaines": construire_arborescence(resumes, args.modele_arborescence),
                 "affectations": {}}
         sauver_json(chemin, taxo)
 
-    themes_valides = {t["nom"] for d in taxo["domaines"] for t in d["themes"]}
-    a_ranger = [i for i in resumes if i not in taxo["affectations"]]
-    print(f"{len(themes_valides)} themes, {len(a_ranger)} fiches a ranger.")
-
+    print(f"Rangement de {len(a_ranger)} fiche(s)...")
+    crees = []
     lots = [a_ranger[i:i + FICHES_PAR_APPEL] for i in range(0, len(a_ranger), FICHES_PAR_APPEL)]
     with ThreadPoolExecutor(max_workers=3) as pool:
         resultats = pool.map(lambda lot: ranger_lot(lot, resumes, taxo["domaines"], args.modele), lots)
-        for lot, affectations in zip(lots, resultats):
+        for lot, (affectations, nouveaux) in zip(lots, resultats):
+            for proposition in nouveaux:
+                if ajouter_theme(taxo["domaines"], proposition):
+                    crees.append(f"{proposition['nom']} (dans {proposition['domaine']})")
+            themes_valides = {t["nom"] for d in taxo["domaines"] for t in d["themes"]}
             recus = {a["id"]: a["themes"] for a in affectations}
             for ident in lot:
                 themes = [t for t in recus.get(ident, []) if t in themes_valides][:2]
                 taxo["affectations"][ident] = themes or [NON_CLASSE]
             sauver_json(chemin, taxo)
+    if crees:
+        print("\nNouveaux themes crees : " + " ; ".join(crees))
 
     # bilan
     compte = {}

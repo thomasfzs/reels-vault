@@ -10,6 +10,7 @@ import base64
 import json
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -82,6 +83,25 @@ def sauver_json(chemin, donnees):
 
 
 # ---------------------------------------------------------------- appel de Claude
+
+def demander_accord(question, oui=False):
+    """Pose une question oui/non dans le terminal. `oui=True` (option --oui)
+    repond oui d'office. Sans terminal (lancement automatique), c'est non."""
+    if oui:
+        return True
+    if not sys.stdin.isatty():
+        print(f"{question} -> non (pas de terminal pour repondre ; utilise --oui)")
+        return False
+    reponse = input(f"{question} [o/N] ").strip().lower()
+    return reponse in ("o", "oui", "y", "yes")
+
+
+def afficher_estimation(appels, entree, sortie, modele):
+    n = lambda x: f"{x:,}".replace(",", " ")  # 12 345 plutot que 12,345
+    print(f"Estimation : {appels} appel(s) a Claude ({modele}), "
+          f"~{n(entree)} tokens en entree et ~{n(sortie)} en sortie, "
+          f"soit ~{n(entree + sortie)} tokens au total.")
+
 
 class ErreurClaude(RuntimeError):
     pass

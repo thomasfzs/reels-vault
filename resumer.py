@@ -30,19 +30,24 @@ from datetime import date
 from pathlib import Path
 
 from commun import (CONSO, DOSSIER_PROJET, MODELE_DEFAUT, ErreurClaude,
-                    appeler_claude, charger_json, lire_toutes_les_fiches,
-                    sauver_json)
+                    afficher_estimation, appeler_claude, charger_json,
+                    demander_accord, lire_toutes_les_fiches, sauver_json)
 
 FICHES_PAR_APPEL = 5
 APPELS_EN_PARALLELE = 3
-MAX_IMAGES_VIDEO = 3
-MAX_IMAGES_CARROUSEL = 6
+MAX_IMAGES_VIDEO = 3        # un carrousel, lui, envoie TOUTES ses images
 MAX_CARACTERES_TEXTE = 6000
+
+# pour l'estimation, d'apres les mesures de conso.jsonl (Haiku, images 512 px)
+TOKENS_FIXES_PAR_APPEL = 2300    # consignes + format de reponse
+CARACTERES_PAR_TOKEN = 3
+TOKENS_PAR_IMAGE = 520
+TOKENS_SORTIE_PAR_FICHE = 800
 
 SYSTEME = """Tu alimentes un "second cerveau" personnel : une base de Reels
 Instagram et TikTok sauvegardes. Tu recois plusieurs fiches brutes (description
-du post, transcription audio automatique, et parfois des images a lire avec
-l'outil Read). Pour CHAQUE fiche, tu produis une entree structuree.
+du post, transcription audio automatique, et parfois des images jointes au
+message). Pour CHAQUE fiche, tu produis une entree structuree.
 
 Regles :
 - Ecris en francais, meme si la video est en anglais.
@@ -101,10 +106,11 @@ SCHEMA = {
 
 
 def images_a_lire(fiche):
-    """Les images ne sont envoyees que si le texte est trop maigre : c'est ce
-    qui coute le plus de quota."""
+    """Un carrousel envoie toutes ses images (ce sont elles, le contenu). Une
+    video n'en envoie que si son texte est trop maigre : c'est ce qui coute le
+    plus de quota."""
     if fiche["genre"] == "carrousel":
-        return fiche["images"][:MAX_IMAGES_CARROUSEL]
+        return list(fiche["images"])
     texte_maigre = len(fiche["transcription"]) < 200 and len(fiche["description"]) < 300
     return fiche["images"][:MAX_IMAGES_VIDEO] if texte_maigre else []
 
@@ -144,6 +150,18 @@ def bloc_fiche(fiche, vault, mode_images):
     return "\n".join(lignes)
 
 
+def estimer(lots, vault, mode_images):
+    """Estime les tokens avant d'appeler Claude, en construisant les vrais
+    messages (sans les envoyer). Renvoie (entree, sortie)."""
+    entree = sortie = 0
+    for lot in lots:
+        texte = sum(len(bloc_fiche(f, vault, "aucune")) for f in lot)
+        images = sum(len(images_a_lire(f)) for f in lot) if mode_images == "vision" else 0
+        entree += TOKENS_FIXES_PAR_APPEL + texte // CARACTERES_PAR_TOKEN + images * TOKENS_PAR_IMAGE
+        sortie += TOKENS_SORTIE_PAR_FICHE * len(lot)
+    return entree, sortie
+
+
 def resumer_lot(lot, vault, modele, mode_images):
     prompt = "\n\n".join(bloc_fiche(f, vault, mode_images) for f in lot)
     images = []
@@ -168,6 +186,8 @@ def main():
                         "vision = images reduites envoyees a Claude (defaut, bien plus precis)")
     p.add_argument("--refaire", nargs="*", default=[],
                    help="identifiants de fiches a resumer de nouveau")
+    p.add_argument("--oui", action="store_true",
+                   help="ne pas demander de confirmation avant d'appeler Claude")
     args = p.parse_args()
 
     vault = Path(args.vault)
@@ -184,6 +204,16 @@ def main():
         return
 
     lots = [fiches[i:i + args.par_appel] for i in range(0, len(fiches), args.par_appel)]
+
+    if args.images == "vision":
+        nb_images = sum(len(images_a_lire(f)) for f in fiches)
+        print(f"{nb_images} image(s) a envoyer a Claude.")
+    entree, sortie = estimer(lots, vault, args.images)
+    afficher_estimation(len(lots), entree, sortie, args.modele)
+    if not demander_accord("Lancer les resumes ?", args.oui):
+        print("Rien n'a ete envoye. Relance quand tu veux : on reprendra ici.")
+        return
+
     verrou = threading.Lock()
     faites = echecs = 0
     debut = time.time()

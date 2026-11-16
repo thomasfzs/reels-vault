@@ -18,6 +18,7 @@ themes/
 *.log
 *.tmp
 .a_traiter.txt
+config.json
 conso.jsonl
 
 # Réglages Obsidian (propres à chacun)

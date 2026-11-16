@@ -28,6 +28,9 @@ uv venv --python 3.12 .venv && uv pip install -r requirements.txt
 python resumer.py     # 2. résumés (Claude)
 python classer.py     # 3. thèmes (Claude)
 python construire.py  # 4. vault.html, index.md, coffre Obsidian
+
+# ensuite, pour ajouter tes nouveaux Reels enregistrés :
+.venv/bin/python mettre_a_jour.py
 ```
 
 Puis ouvre `vault.html`, ou ce dossier dans Obsidian. Le détail de chaque étape est plus bas.
@@ -113,8 +116,8 @@ lancement télécharge le modèle Whisper (~500 Mo).
 ### 3. Résumer, classer, construire
 
 ```bash
-python resumer.py      # Claude résume chaque fiche → resumes.json
-python classer.py      # Claude range les fiches par thèmes → taxonomie.json
+python resumer.py      # Claude résume chaque fiche → resumes.json (estimation + accord)
+python classer.py      # Claude range les fiches par thèmes → taxonomie.json (idem)
 python construire.py   # génère index.md, vault.html, fiches/ et themes/
 ```
 
@@ -137,37 +140,36 @@ base a beaucoup grossi.
 
 ---
 
-## Remplissage automatique
+## Ajouter ses nouveaux Reels
 
-Une fois la base construite, `mettre_a_jour.py` fait tout d'un coup :
-
-1. il lit tes derniers posts **Enregistrés** directement sur Instagram, avec la
-   session de ton navigateur, plus les liens que tu aurais mis dans `inbox.txt` ;
-2. il ne garde que les nouveaux, puis enchaîne récolte, résumé, classement et
-   construction ;
-3. il t'envoie une notification de bureau quand des vidéos sont ajoutées.
-
-Tu n'as donc rien à changer à tes habitudes : tu enregistres un Reel dans Instagram,
-et il arrive dans le vault au passage suivant. Quand il n'y a rien de nouveau, le
-script s'arrête sans appeler Claude.
+Une fois la base construite, tu n'as plus besoin de refaire l'export Instagram.
+Quand tu en as envie, lance :
 
 ```bash
-.venv/bin/python mettre_a_jour.py --compte ton_pseudo --cookies firefox
+.venv/bin/python mettre_a_jour.py
 ```
 
-Pour le lancer chaque jour sous Linux, copie les deux fichiers de `systemd/`
-dans `~/.config/systemd/user/`, adapte les lignes marquées « À ADAPTER »
-(dossier, pseudo, navigateur, `PATH` vers la commande `claude`), puis :
+La première fois, il te demande ton pseudo Instagram et le navigateur où tu es
+connecté, et les garde dans `config.json`. Ensuite, il déroule 5 étapes en
+t'affichant où il en est :
 
-```bash
-systemctl --user daemon-reload
-systemctl --user enable --now reels-vault.timer
-```
+1. **Chercher** : il lit tes derniers posts **Enregistrés** (60 par défaut)
+   directement sur Instagram. gallery-dl ouvre ta page « Enregistrés » avec la
+   session de ton navigateur, comme si tu la consultais. Il ajoute les liens de
+   `inbox.txt` et te dit combien sont nouveaux.
+2. **Récolter** (local, gratuit) : il annonce la durée et te demande si tu veux
+   y aller.
+3. **Résumer** (Claude) : il estime les tokens et te demande ton accord.
+4. **Classer** (Claude) : pareil.
+5. **Construire** : il met à jour `index.md`, `vault.html` et le coffre Obsidian.
 
-La mise à jour se fait à 20 h, ou au prochain démarrage si le PC était éteint.
-Le journal est dans `mise_a_jour.log`. Sous Windows, le Planificateur de tâches
-fait la même chose (déclencheur quotidien, option « Exécuter dès que possible
-si une exécution planifiée a été manquée »).
+**Si tu refuses une étape, rien n'est perdu** : la fois suivante, il voit ce qui
+reste à résumer ou à classer et reprend à cette étape. Rien ne se lance tout seul.
+Pour rattraper un gros retard, utilise `--max 300` ; pour ne répondre à aucune
+question, `--oui`.
+
+`resumer.py` et `classer.py` affichent aussi leur estimation et demandent ton
+accord quand tu les lances seuls.
 
 **Cookies chiffrés** : Chrome, Brave et Edge sous Linux chiffrent leurs cookies
 avec une clé rangée dans le trousseau du système. Si yt-dlp affiche
@@ -201,6 +203,7 @@ avec une clé rangée dans le trousseau du système. Si yt-dlp affiche
 | `resumer.py` | fiches brutes → résumés structurés (`resumes.json`) |
 | `classer.py` | résumés → arborescence de thèmes (`taxonomie.json`) |
 | `construire.py` | → `index.md`, `vault.html`, `fiches/`, `themes/` |
+| `mettre_a_jour.py` | lance tout dans l'ordre pour les nouveaux Reels, avec ta validation |
 | `gabarit_vault.html` | modèle de la page de consultation |
 | `commun.py` | lecture des fiches, appel de `claude -p` |
 | `CLAUDE.md` | consignes pour interroger la base avec Claude |
