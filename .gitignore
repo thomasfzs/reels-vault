@@ -26,3 +26,7 @@ conso.jsonl
 
 # Anciennes versions des scripts (Ollama, ntfy), gardées en local
 _ancien/
+
+# Interface : file d attente de recolte et lanceur Linux (chemin propre a chacun)
+.a_recolter.txt
+Reels Vault.desktop

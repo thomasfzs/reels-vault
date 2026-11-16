@@ -37,6 +37,24 @@ ouvre le dossier dans Claude Code et tape `/reels ta question`.
 
 Puis ouvre `vault.html`, ou ce dossier dans Obsidian. Le détail de chaque étape est plus bas.
 
+### Ou avec la fenêtre (interface graphique)
+
+Une bulle par étape (Chercher → Récolter → Résumer → Classer → Construire → Vault).
+Chaque bulle montre ce qui attend, avec l'estimation des tokens pour les étapes
+Claude. Tu cliques sur une bulle pour lancer l'étape, ou tu la laisses en attente
+pour plus tard. Pendant le travail, on voit passer sur les fils ce qui circule :
+liens, reels récoltés (avec leur image), résumés, fiches rangées.
+
+Lanceurs (à faire une seule fois, rien à refaire après une modification de l'interface) :
+
+- **Linux** : `bash installer-linux.sh`, puis « Reels Vault » dans le lanceur
+  d'applications, ou double-clic sur `Reels Vault.desktop`.
+- **Windows** : double-clic sur `Reels Vault.bat`.
+- **macOS** : double-clic sur `Reels Vault.command` (la première fois : clic droit > Ouvrir).
+
+Ou directement : `.venv/bin/python interface/app.py`. Le bouton « Démo » rejoue
+de faux événements pour voir l'animation sans rien lancer.
+
 ---
 
 ## Comment ça marche
@@ -219,6 +237,8 @@ avec une clé rangée dans le trousseau du système. Si yt-dlp affiche
 | `classer.py` | résumés → arborescence de thèmes (`taxonomie.json`) |
 | `construire.py` | → `index.md`, `vault.html`, `fiches/`, `themes/` |
 | `mettre_a_jour.py` | lance tout dans l'ordre pour les nouveaux Reels, avec ta validation |
+| `interface/` | la fenêtre (pywebview) : `app.py` pilote les scripts, `index.html`/`app.js`/`style.css` dessinent les bulles |
+| `installer-linux.sh`, `Reels Vault.bat`, `Reels Vault.command` | lanceurs Linux, Windows, macOS |
 | `.claude/skills/reels/` | le skill `/reels` pour interroger le vault avec Claude |
 | `gabarit_vault.html` | modèle de la page de consultation |
 | `commun.py` | lecture des fiches, appel de `claude -p` |

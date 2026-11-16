@@ -1,0 +1,109 @@
+/* Couleurs : tout est defini ici, pour pouvoir changer le style facilement */
+:root {
+  --fond: #0c0e13;
+  --texte: #e8e6e1;
+  --texte-doux: #8b8f99;
+  --bulle: #161a22;
+  --bord: #2a2f3a;
+  --accent: #ffb86b;      /* "il y a du travail en attente" */
+  --actif: #7cc4ff;       /* "en cours" */
+  --ok: #6be3a4;
+  --alerte: #ff7b72;
+  --carte: #151920ee;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0; height: 100%; overflow: hidden;
+  background: var(--fond); color: var(--texte);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  user-select: none;
+}
+
+#toile { position: fixed; inset: 0; width: 100%; height: 100%; }
+
+header {
+  position: fixed; top: 18px; left: 24px; display: flex; align-items: baseline; gap: 16px;
+}
+header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .02em; }
+#statut { color: var(--texte-doux); font-size: 13px; }
+
+/* ------------------------------------------------------------ bulles */
+
+.bulle {
+  position: absolute; transform: translate(-50%, -50%);
+  border-radius: 50%; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  cursor: pointer; transition: transform .25s ease;
+}
+.bulle:hover { transform: translate(-50%, -50%) scale(1.04); }
+.bulle .nom { font-size: .9em; color: var(--texte-doux); letter-spacing: .04em; text-transform: uppercase; }
+.bulle .chiffre { font-size: 2em; font-weight: 600; line-height: 1.1; margin: 2px 0; }
+.bulle .detail { font-size: .82em; line-height: 1.3; color: var(--texte-doux); max-width: 80%; white-space: pre-line; }
+.bulle.attente .chiffre { color: var(--accent); }
+.bulle.encours .chiffre { color: var(--actif); }
+.bulle.bloque .chiffre { color: var(--alerte); }
+.bulle.vault .chiffre { font-size: 2.1em; color: var(--ok); }
+
+.bulle .numero {
+  position: absolute; top: -1.9em; left: 50%; transform: translateX(-50%);
+  font-size: .72em; color: var(--texte-doux); background: var(--fond);
+  padding: 0 6px; border-radius: 8px;
+}
+
+/* ------------------------------------------------------------ carte */
+
+#carte {
+  position: absolute; width: 320px; padding: 16px 18px;
+  background: var(--carte); border: 1px solid var(--bord); border-radius: 14px;
+  backdrop-filter: blur(8px); box-shadow: 0 12px 40px #0008;
+  transition: opacity .2s ease, transform .2s ease;
+  user-select: text;
+}
+#carte.cachee { opacity: 0; pointer-events: none; transform: translateY(6px); }
+#carte h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+#carte p { margin: 6px 0; color: #c9c7c2; }
+#carte .petit { font-size: 12px; color: var(--texte-doux); }
+#carte .estimation {
+  margin: 10px 0; padding: 10px 12px; border-radius: 10px;
+  background: #ffb86b14; border: 1px solid #ffb86b33; font-size: 13px;
+}
+#carte .estimation b { color: var(--accent); }
+#carte .message { margin-top: 10px; font-size: 13px; }
+#carte .message.erreur { color: var(--alerte); }
+#carte .message.ok { color: var(--ok); }
+#carte .boutons { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+#carte input {
+  width: 100%; margin: 4px 0 8px; padding: 7px 9px; border-radius: 8px;
+  border: 1px solid var(--bord); background: #0c0e13; color: var(--texte); font: inherit;
+}
+#carte .fermer {
+  position: absolute; top: 10px; right: 12px; background: none; border: 0;
+  color: var(--texte-doux); font-size: 18px; cursor: pointer;
+}
+
+button {
+  font: inherit; padding: 7px 14px; border-radius: 9px; cursor: pointer;
+  border: 1px solid var(--bord); background: #1d222c; color: var(--texte);
+}
+button:hover { background: #262c38; }
+button.principal { background: var(--accent); border-color: var(--accent); color: #1a1206; font-weight: 600; }
+button.principal:hover { filter: brightness(1.08); }
+button.lien { background: none; border: 0; padding: 4px 0; color: var(--actif); text-decoration: underline; }
+button:disabled { opacity: .45; cursor: default; }
+
+/* ------------------------------------------------------------ bas de page */
+
+footer { position: fixed; bottom: 14px; left: 20px; display: flex; gap: 8px; }
+button.discret { background: none; border-color: transparent; color: var(--texte-doux); font-size: 12px; padding: 4px 8px; }
+button.discret:hover { color: var(--texte); border-color: var(--bord); }
+
+#journal {
+  position: fixed; left: 20px; right: 20px; bottom: 48px; height: 32vh; margin: 0;
+  padding: 10px 12px; overflow: auto; border-radius: 10px;
+  background: #07080bee; border: 1px solid var(--bord);
+  font: 12px/1.4 ui-monospace, "JetBrains Mono", Consolas, monospace; color: #b8bcc6;
+  white-space: pre-wrap; user-select: text;
+}
+#journal.cache { display: none; }

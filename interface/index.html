@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reels Vault</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- le canvas dessine les fils, les particules et le halo des bulles -->
+  <canvas id="toile"></canvas>
+
+  <!-- les bulles elles-memes (texte cliquable) sont posees par-dessus, en HTML -->
+  <div id="bulles"></div>
+
+  <!-- la carte qui s'ouvre quand on clique sur une bulle -->
+  <div id="carte" class="cachee"></div>
+
+  <header>
+    <h1>Reels Vault</h1>
+    <span id="statut">Chargement…</span>
+  </header>
+
+  <footer>
+    <button id="bouton-journal" class="discret">Journal</button>
+    <button id="bouton-demo" class="discret" title="Rejoue de faux evenements, sans rien lancer">Démo</button>
+  </footer>
+  <pre id="journal" class="cache"></pre>
+
+  <script src="app.js"></script>
+</body>
+</html>

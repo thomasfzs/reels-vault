@@ -5,3 +5,6 @@ faster-whisper
 numpy
 # resumer.py / classer.py / construire.py n'ont besoin que de la bibliothèque
 # standard, plus la commande `claude` (Claude Code) connectée à ton compte.
+# Interface graphique (interface/app.py)
+pywebview
+PyGObject; sys_platform == "linux"   # moteur GTK/WebKit de la fenetre sous Linux
