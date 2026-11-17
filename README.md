@@ -6,9 +6,8 @@ que tout est enfermé dans des vidéos qu'aucune recherche ne sait lire.
 
 Reels Vault télécharge chaque vidéo, la **transcrit** en local, la fait **résumer
 par Claude** (qui lit aussi le texte incrusté dans les images), la **range par
-thèmes**, et te donne trois façons de t'en servir :
+thèmes**, et te donne deux façons de t'en servir :
 
-- **`vault.html`** : une page hors ligne avec recherche instantanée et filtres par thème ;
 - **un coffre Obsidian** : une note par vidéo, reliées à leurs thèmes (vue graphe) ;
 - **`index.md` + `CLAUDE.md`** : tu poses tes questions à Claude en langage normal
   (« je pars dans les Alpes, ressors-moi tout ce que j'ai gardé »).
@@ -16,7 +15,7 @@ thèmes**, et te donne trois façons de t'en servir :
 > Projet basé sur le tuto [sosoj92/reels-vault](https://github.com/sosoj92/reels-vault)
 > (licence MIT). La récolte (`ingest.py`) vient de là. Tout ce qui suit la
 > transcription a été réécrit : résumés et classement par Claude Code, arborescence
-> de thèmes, notes Obsidian, nouvelle page de consultation.
+> de thèmes, coffre Obsidian, interface graphique.
 
 ## Démarrage rapide
 
@@ -35,7 +34,7 @@ Il déroule toutes les étapes (récolte, résumés, thèmes, construction) en t
 demandant ton accord avant chacune. Pour poser des questions sur tes reels,
 ouvre le dossier dans Claude Code et tape `/reels ta question`.
 
-Puis ouvre `vault.html`, ou ce dossier dans Obsidian. Le détail de chaque étape est plus bas.
+Puis ouvre ce dossier dans Obsidian. Le détail de chaque étape est plus bas.
 
 ### Ou avec la fenêtre (interface graphique)
 
@@ -72,7 +71,7 @@ resumes.json                             (lit les images quand il n'y a pas de v
 taxonomie.json
    │
    ▼  construire.py ── sans IA, instantané
-index.md · vault.html · fiches/ · themes/
+index.md · fiches/ · themes/  (coffre Obsidian)
 ```
 
 Chaque étape est **relançable** : elle ne traite que ce qui n'a pas encore été fait.
@@ -138,7 +137,7 @@ lancement télécharge le modèle Whisper (~500 Mo).
 ```bash
 python resumer.py      # Claude résume chaque fiche → resumes.json (estimation + accord)
 python classer.py      # Claude range les fiches par thèmes → taxonomie.json (idem)
-python construire.py   # génère index.md, vault.html, fiches/ et themes/
+python construire.py   # génère index.md, fiches/ et themes/
 ```
 
 `resumer.py --limite 10` pour tester, `--refaire <id>` pour refaire une fiche.
@@ -147,8 +146,7 @@ base a beaucoup grossi.
 
 ### 4. Consulter
 
-- **`vault.html`** : double-clic, c'est tout. Ça marche hors ligne et sur téléphone.
-- **Obsidian** : « Ouvrir un autre coffre » → « Ouvrir un dossier comme coffre »,
+- **Obsidian** ([obsidian.md](https://obsidian.md), gratuit) : dans la fenêtre, clic sur la bulle **Vault**. Sinon, « Ouvrir un autre coffre » → « Ouvrir un dossier comme coffre »,
   et choisis **ce dossier** (celui du projet). `construire.py` règle le graphe
   (`Ctrl+G`) pour n'afficher que les fiches et les thèmes, avec une couleur par
   domaine. Les notes `fiches/` et `themes/` sont **régénérées** à chaque
@@ -188,7 +186,7 @@ t'affichant où il en est :
    y aller.
 3. **Résumer** (Claude) : il estime les tokens et te demande ton accord.
 4. **Classer** (Claude) : pareil.
-5. **Construire** : il met à jour `index.md`, `vault.html` et le coffre Obsidian.
+5. **Construire** : il met à jour `index.md` et le coffre Obsidian.
 
 **Si tu refuses une étape, rien n'est perdu** : la fois suivante, il voit ce qui
 reste à résumer ou à classer et reprend à cette étape. Rien ne se lance tout seul.
@@ -235,12 +233,11 @@ avec une clé rangée dans le trousseau du système. Si yt-dlp affiche
 | `ingest.py` | liens → fiches brutes (`raw/`) + images (`images/`) |
 | `resumer.py` | fiches brutes → résumés structurés (`resumes.json`) |
 | `classer.py` | résumés → arborescence de thèmes (`taxonomie.json`) |
-| `construire.py` | → `index.md`, `vault.html`, `fiches/`, `themes/` |
+| `construire.py` | → `index.md`, `fiches/`, `themes/` (coffre Obsidian) |
 | `mettre_a_jour.py` | lance tout dans l'ordre pour les nouveaux Reels, avec ta validation |
 | `interface/` | la fenêtre (pywebview) : `app.py` pilote les scripts, `index.html`/`app.js`/`style.css` dessinent les bulles |
 | `installer-linux.sh`, `Reels Vault.bat`, `Reels Vault.command` | lanceurs Linux, Windows, macOS |
 | `.claude/skills/reels/` | le skill `/reels` pour interroger le vault avec Claude |
-| `gabarit_vault.html` | modèle de la page de consultation |
 | `commun.py` | lecture des fiches, appel de `claude -p` |
 | `CLAUDE.md` | consignes pour interroger la base avec Claude |
 

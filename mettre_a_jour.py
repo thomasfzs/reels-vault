@@ -12,7 +12,7 @@ Il affiche ce qu'il trouve, puis deroule les etapes une par une :
   2. Recolter   ingest.py : telechargement + transcription (local, gratuit)
   3. Resumer    resumer.py : Claude    -> estimation des tokens, puis ton accord
   4. Classer    classer.py : Claude    -> estimation des tokens, puis ton accord
-  5. Construire construire.py : index.md, vault.html, Obsidian (local, instantane)
+  5. Construire construire.py : index.md + coffre Obsidian (local, instantane)
 
 Si tu refuses une etape, rien n'est perdu : la prochaine fois, le script voit
 ce qui reste a faire et reprend a cette etape, sans tout recommencer.
@@ -223,7 +223,7 @@ def main():
     lancer("classer.py", *oui)
 
     # 5. construire (local)
-    titre_etape(5, "Construire le vault (index, page web, Obsidian)")
+    titre_etape(5, "Construire le vault (index, Obsidian)")
     lancer("construire.py")
 
     a_resumer, a_classer = etat_du_vault()

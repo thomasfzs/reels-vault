@@ -23,7 +23,7 @@ sauvegardés, transcrits et résumés.
 1. `ingest.py` : liens → `raw/` + `images/` (yt-dlp, Whisper, ffmpeg)
 2. `resumer.py` : `raw/` → `resumes.json` (Claude)
 3. `classer.py` : `resumes.json` → `taxonomie.json` (Claude)
-4. `construire.py` : → `index.md`, `vault.html`, `fiches/`, `themes/`
+4. `construire.py` : → `index.md`, `fiches/`, `themes/` (coffre Obsidian)
 
 Après toute modification de `resumes.json` ou `taxonomie.json`, relancer
 `python construire.py`.

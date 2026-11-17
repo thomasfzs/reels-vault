@@ -32,7 +32,8 @@ const etat = {
   progres: {},          // etape -> {fait, total}
   messages: {},         // etape -> {texte, classe} : resultat du dernier lancement
   trouves: null,        // nombre de nouveaux reels au dernier "Chercher"
-  carte: null,          // id de l'etape dont la carte est ouverte
+  carte: null,          // id de l'etape dont la carte est ouverte ("auto" : la carte du mode auto)
+  auto: false,          // la chaine "Tout mettre a jour" tourne
 };
 
 const nf = (n) => Math.round(n).toLocaleString("fr-FR");
@@ -51,10 +52,12 @@ const apiFactice = {
     classer: { a_faire: 8, appels: 1, entree: 3400, sortie: 900, modele: "haiku", premiere_fois: false },
     construire: { a_faire: true, jamais: false },
     vault: { reels: 546, recoltes: 549, domaines: 10, themes: 34 }, en_cours: null,
+    auto: { par_reel: 3200, secondes_par_reel: 30 }, obsidian: false, systeme: "linux",
   }),
   lancer: async () => ({ ok: false, message: "Pas de Python ici (aperçu navigateur)." }),
   arreter: async () => false, choisir_export: async () => null,
-  sauver_config: async () => apiFactice.etat(), ouvrir_vault: async () => {},
+  sauver_config: async () => apiFactice.etat(), lancer_tout: async () => ({ ok: false, message: "Aperçu navigateur." }),
+  ouvrir_obsidian: async () => ({ ok: false, raison: "absent" }), ouvrir_lien: async () => {},
 };
 const api = () => (window.pywebview && window.pywebview.api) || apiFactice;
 
@@ -91,6 +94,12 @@ window.recevoir = function (evt) {
     case "rafale":
       for (let i = 0; i < evt.nombre; i++) lancerParticule(evt.de, evt.genre, null);
       break;
+    case "auto":
+      etat.auto = evt.actif;
+      if (evt.etat) etat.vault = evt.etat;
+      if (!evt.actif) etat.enCours = null;
+      majBouton();
+      break;
     case "log":
       ajouterJournal(evt.texte);
       return;
@@ -119,16 +128,43 @@ function miseEnPage() {
   toile.width = W * dpr; toile.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // les bulles s'alignent sur une vague douce, de gauche a droite
-  const marge = Math.max(80, W * 0.07);
-  const pas = (W - 2 * marge) / (ETAPES.length - 1);
-  R = Math.max(46, Math.min(72, pas * 0.36, H * 0.11));
-  const centreY = H * 0.47;
-  const amplitude = Math.min(H * 0.12, 90);
-  ETAPES.forEach((e, i) => {
-    const vague = i === ETAPES.length - 1 ? 0 : Math.sin(i * 1.15 + 0.4) * amplitude;
-    pos[i] = { x: marge + i * pas, y: centreY + vague, r: e.id === "vault" ? R * 1.25 : R };
-  });
+  const n = ETAPES.length;
+  if (W >= H * 1.6) {
+    // fenetre large : les bulles s'alignent sur une vague douce, de gauche a droite
+    // la taille des bulles depend de l'ecart entre elles, et la marge de leur
+    // taille : on fait deux passes pour que rien ne depasse du bord
+    let marge = W * 0.06, pas = 0;
+    for (let passe = 0; passe < 2; passe++) {
+      pas = (W - 2 * marge) / (n - 1);
+      R = Math.max(44, Math.min(110, pas * 0.36, H * 0.15));
+      marge = Math.max(W * 0.04, R * 1.45 + 16);
+    }
+    pas = (W - 2 * marge) / (n - 1);
+    const centreY = H * 0.5;
+    const amplitude = Math.min(H * 0.16, R * 1.6);
+    ETAPES.forEach((e, i) => {
+      const vague = i === n - 1 ? 0 : Math.sin(i * 1.15 + 0.4) * amplitude;
+      pos[i] = { x: marge + i * pas, y: centreY + vague, r: e.id === "vault" ? R * 1.25 : R };
+    });
+  } else {
+    // fenetre etroite ou haute : un serpentin sur deux rangs
+    // (1 2 3 de gauche a droite, puis 4 5 Vault de droite a gauche)
+    const parRang = Math.ceil(n / 2);
+    let marge = W * 0.1, pas = 0;
+    for (let passe = 0; passe < 2; passe++) {
+      pas = (W - 2 * marge) / (parRang - 1);
+      R = Math.max(44, Math.min(100, pas * 0.34, H * 0.12));
+      marge = Math.max(W * 0.05, R * 1.45 + 16);
+    }
+    pas = (W - 2 * marge) / (parRang - 1);
+    const rangs = [H * 0.3, H * 0.7];
+    ETAPES.forEach((e, i) => {
+      const rang = Math.floor(i / parRang), k = i % parRang;
+      const x = rang === 0 ? marge + k * pas : W - marge - k * pas;
+      const vague = Math.sin(i * 1.7) * R * 0.5;
+      pos[i] = { x, y: rangs[rang] + vague, r: e.id === "vault" ? R * 1.25 : R };
+    });
+  }
 
   for (const [i, div] of divsBulles.entries()) {
     div.style.left = pos[i].x + "px";
@@ -146,7 +182,11 @@ const divsBulles = ETAPES.map((e) => {
   d.className = "bulle" + (e.id === "vault" ? " vault" : "");
   d.innerHTML = `${e.numero ? `<span class="numero">${e.numero}</span>` : ""}
     <span class="nom">${e.nom}</span><span class="chiffre">·</span><span class="detail"></span>`;
-  d.addEventListener("click", (ev) => { ev.stopPropagation(); ouvrirCarte(e.id); });
+  d.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    if (e.id === "vault") ouvrirObsidian();
+    else ouvrirCarte(e.id);
+  });
   document.getElementById("bulles").appendChild(d);
   return d;
 });
@@ -195,14 +235,32 @@ function majBulles() {
     d.classList.toggle("bloque", classe === "bloque");
     halo[i].classe = classe;
   });
+  majBouton();
   const statut = document.getElementById("statut");
-  if (etat.enCours) statut.textContent = `${ETAPES[INDEX[etat.enCours]].nom} en cours…`;
+  if (etat.enCours) statut.textContent = (etat.auto ? "Mise à jour auto · " : "") + `${ETAPES[INDEX[etat.enCours]].nom} en cours…`;
   else if (etat.vault) statut.textContent = `@${etat.vault.config.compte || "?"} · ${nf(etat.vault.vault.recoltes)} reels récoltés`;
 }
+
+// ------------------------------------------------------------------ bouton "Tout mettre a jour"
+
+const boutonAuto = document.getElementById("bouton-auto");
+function majBouton() {
+  boutonAuto.textContent = etat.auto ? "Mise à jour en cours…" : "Tout mettre à jour";
+  boutonAuto.classList.toggle("encours", etat.auto);
+}
+boutonAuto.addEventListener("click", (ev) => { ev.stopPropagation(); ouvrirCarte("auto"); });
 
 // ------------------------------------------------------------------ carte
 
 const carte = document.getElementById("carte");
+
+// Vault : ouvre directement le coffre dans Obsidian ; s'il n'est pas
+// installe, la carte explique pourquoi l'installer
+async function ouvrirObsidian() {
+  const r = await api().ouvrir_obsidian();
+  if (r.ok) { halo[INDEX.vault].pouls = 1; etat.carte = null; majCarte(); }
+  else { etat.carte = "vault"; majCarte(); }
+}
 
 function ouvrirCarte(id) {
   etat.carte = etat.carte === id ? null : id;
@@ -221,12 +279,13 @@ function estimation(o, extra = "") {
 function corpsCarte(id) {
   const v = etat.vault;
   const tourne = etat.enCours === id;
-  const occupe = etat.enCours && !tourne;
+  const occupe = (etat.enCours || etat.auto) && !tourne;
   const lancer = (texte) => tourne
     ? `<button data-action="arreter" ${id === "chercher" ? "disabled" : ""}>Arrêter</button>`
     : `<button class="principal" data-action="lancer" ${occupe ? "disabled" : ""}>${texte}</button>
        <button data-action="fermer">Pas maintenant</button>`;
-  const attente = occupe ? `<p class="petit">Attends la fin de « ${ETAPES[INDEX[etat.enCours]].nom} ».</p>` : "";
+  const attente = !occupe ? "" : etat.auto ? `<p class="petit">La mise à jour automatique est en cours.</p>`
+    : `<p class="petit">Attends la fin de « ${ETAPES[INDEX[etat.enCours]].nom} ».</p>`;
 
   switch (id) {
     case "chercher":
@@ -271,15 +330,51 @@ function corpsCarte(id) {
     }
     case "construire":
       return `<h2>Construire le vault</h2>
-        <p>Refait index.md, vault.html et le coffre Obsidian (fiches/, themes/). Local, instantané.</p>
+        <p>Refait index.md et le coffre Obsidian (fiches/, themes/). Local, instantané.</p>
         <p class="petit">${v.construire.a_faire ? "Des résumés ou des classements sont plus récents que le vault." : "Le vault est à jour."}</p>
         ${attente}<div class="boutons">${lancer("Construire")}</div>`;
     case "vault":
-      return `<h2>Ton vault</h2>
-        <p><b>${nf(v.vault.reels)}</b> fiches lisibles, rangées en ${v.vault.domaines} domaines et ${v.vault.themes} thèmes.</p>
-        <p class="petit">${nf(v.vault.recoltes)} reels récoltés au total.</p>
-        <div class="boutons"><button class="principal" data-action="ouvrir">Ouvrir vault.html</button></div>`;
+      return `<h2>Il te faut Obsidian</h2>
+        <p>Ton vault est un <b>coffre Obsidian</b> : une note par reel (${nf(v.vault.reels)} fiches),
+        reliées à leurs ${v.vault.themes} thèmes, avec la recherche, les liens entre notes et la vue graphe
+        (Ctrl+G) qui dessine tout ce que tu as gardé.</p>
+        <p>Obsidian est gratuit. Installe-le, puis reviens cliquer sur la bulle Vault : le coffre s'ouvrira tout seul.</p>
+        ${v.systeme === "linux" ? `<p class="petit">Sous Arch / Omarchy : <code>sudo pacman -S obsidian</code></p>` : ""}
+        <div class="boutons"><button class="principal" data-action="obsidian">Télécharger Obsidian</button>
+        <button data-action="fermer">Plus tard</button></div>`;
+    case "auto":
+      return corpsAuto();
   }
+}
+
+// la carte du mode auto : tout ce qui va se passer, valide en une fois
+function corpsAuto() {
+  const v = etat.vault;
+  if (etat.auto) return `<h2>Mise à jour automatique</h2>
+    <p>${etat.enCours ? `Étape en cours : <b>${ETAPES[INDEX[etat.enCours]].nom}</b>.` : "Préparation…"}</p>
+    <p class="petit">Chaque étape s'enchaîne toute seule. Arrêter ne perd rien : on reprendra là.</p>
+    <div class="boutons"><button data-action="arreter">Arrêter</button></div>`;
+  const premiereFois = !v.vault.recoltes;
+  const claude = v.resumer.entree + v.resumer.sortie + v.classer.entree + v.classer.sortie;
+  const lignes = [
+    `<li><b>Chercher</b> : tes ${v.chercher.max} derniers Enregistrés${premiereFois ? " (ou l'export .zip, conseillé la première fois)" : ""}</li>`,
+    `<li><b>Récolter</b> : ${v.recolter.attente ? `${v.recolter.attente} déjà en attente + ` : ""}les nouveaux, ~${v.auto.secondes_par_reel} s par reel</li>`,
+    `<li><b>Résumer</b> et <b>Classer</b> avec Claude : ${claude ? `~${court(claude)} tokens pour ce qui attend déjà, ` : ""}puis ~${court(v.auto.par_reel)} tokens par nouveau reel</li>`,
+    `<li><b>Construire</b> le coffre Obsidian</li>`,
+  ];
+  const occupe = etat.enCours || etat.auto ? "disabled" : "";
+  return `<h2>Tout mettre à jour</h2>
+    <p>Enchaîne toutes les étapes qui ont du travail, sans redemander à chaque fois :</p>
+    <ul class="liste">${lignes.join("")}</ul>
+    <p class="petit">Le PC doit rester allumé pendant la récolte. Si Instagram bloque, la suite continue avec ce qui a été récolté.</p>
+    <div class="boutons">
+      ${premiereFois
+        ? `<button class="principal" data-action="auto-export" ${occupe}>Importer l'export (.zip) et tout lancer</button>
+           <button data-action="auto" ${occupe}>Sans export</button>`
+        : `<button class="principal" data-action="auto" ${occupe}>Tout lancer</button>
+           <button data-action="fermer">Pas maintenant</button>`}
+    </div>
+    ${premiereFois ? "" : `<p class="petit">Gros rattrapage ? <button class="lien" data-action="auto-export" ${occupe}>tout lancer depuis l'export Instagram (.zip)</button></p>`}`;
 }
 
 function majCarte() {
@@ -290,9 +385,15 @@ function majCarte() {
     ${m && m.texte ? `<p class="message ${m.classe}">${m.texte}</p>` : ""}`;
   carte.dataset.etape = id;
 
+  if (id === "auto") {
+    carte.style.left = W - 340 - 20 + "px";
+    carte.style.top = "62px";
+    carte.classList.remove("cachee");
+    return;
+  }
   // sous la bulle si elle est haute, au-dessus si elle est basse
   const p = pos[INDEX[id]];
-  const largeur = 320;
+  const largeur = 340;
   const x = Math.min(Math.max(p.x - largeur / 2, 16), W - largeur - 16);
   carte.style.left = x + "px";
   carte.classList.remove("cachee");
@@ -318,7 +419,17 @@ carte.addEventListener("click", async (ev) => {
       break;
     }
     case "arreter": await api().arreter(); break;
-    case "ouvrir": await api().ouvrir_vault(); break;
+    case "obsidian": await api().ouvrir_lien("https://obsidian.md/download"); break;
+    case "auto": {
+      const r = await api().lancer_tout(null);
+      if (!r.ok) { etat.messages.auto = { texte: r.message, classe: "erreur" }; majCarte(); }
+      break;
+    }
+    case "auto-export": {
+      const chemin = await api().choisir_export();
+      if (chemin) await api().lancer_tout(chemin);
+      break;
+    }
     case "config":
       etat.vault = await api().sauver_config(
         document.getElementById("champ-compte").value,
@@ -330,15 +441,23 @@ carte.addEventListener("click", async (ev) => {
 
 // ------------------------------------------------------------------ fils et particules
 
-// fil i : de la bulle i a la bulle i+1, une courbe de Bezier en S
+// fil i : de la bulle i a la bulle i+1, une courbe de Bezier en S.
+// Poignees horizontales si les bulles sont cote a cote, verticales si
+// elles sont l'une au-dessus de l'autre (passage d'un rang a l'autre).
 function fil(i) {
   const a = pos[i], b = pos[i + 1];
-  const dx = (b.x - a.x) * 0.5;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  if (Math.abs(dx) >= Math.abs(dy) * 0.8) {
+    const sx = Math.sign(dx), h = dx * 0.5;
+    return [
+      { x: a.x + sx * a.r * 0.92, y: a.y }, { x: a.x + h, y: a.y },
+      { x: b.x - h, y: b.y }, { x: b.x - sx * b.r * 0.92, y: b.y },
+    ];
+  }
+  const sy = Math.sign(dy), h = dy * 0.5;
   return [
-    { x: a.x + a.r * 0.92, y: a.y },
-    { x: a.x + dx, y: a.y },
-    { x: b.x - dx, y: b.y },
-    { x: b.x - b.r * 0.92, y: b.y },
+    { x: a.x, y: a.y + sy * a.r * 0.92 }, { x: a.x, y: a.y + h },
+    { x: b.x, y: b.y - h }, { x: b.x, y: b.y - sy * b.r * 0.92 },
   ];
 }
 
@@ -385,11 +504,6 @@ function sortirDesFiles(t) {
   });
 }
 
-// quelques poussieres qui flottent en permanence sur les fils : ca vit meme au repos
-const poussieres = [];
-for (let i = 0; i < ETAPES.length - 1; i++)
-  for (let k = 0; k < 3; k++) poussieres.push({ fil: i, t: Math.random(), v: 0.03 + Math.random() * 0.03, phase: Math.random() * 6.28 });
-
 const douceur = (t) => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;  // lent-rapide-lent
 
 function dessiner(t) {
@@ -398,7 +512,6 @@ function dessiner(t) {
   ctx.clearRect(0, 0, W, H);
   sortirDesFiles(t);
   const s = t / 1000;
-  const actif = etat.enCours ? INDEX[etat.enCours] : -1;
 
   // -- fils
   for (let i = 0; i < ETAPES.length - 1; i++) {
@@ -408,24 +521,7 @@ function dessiner(t) {
     ctx.bezierCurveTo(c[1].x, c[1].y, c[2].x, c[2].y, c[3].x, c[3].y);
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgba(255,255,255,0.07)";
-    ctx.setLineDash([]);
     ctx.stroke();
-    if (i === actif || i + 1 === actif) {  // le fil vit autour de l'etape en cours
-      ctx.strokeStyle = "rgba(124,196,255,0.35)";
-      ctx.setLineDash([3, 14]);
-      ctx.lineDashOffset = -s * 40;
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-  }
-
-  // -- poussieres
-  for (const p of poussieres) {
-    p.t = (p.t + p.v / 60) % 1;
-    const b = bezier(fil(p.fil), p.t);
-    const o = Math.sin(s * 1.3 + p.phase) * 4;
-    ctx.fillStyle = `rgba(255,255,255,${0.12 * Math.sin(Math.PI * p.t)})`;
-    ctx.beginPath(); ctx.arc(b.x + b.nx * o, b.y + b.ny * o, 1.4, 0, 6.28); ctx.fill();
   }
 
   // -- halo des bulles
@@ -505,7 +601,7 @@ function dessiner(t) {
   }
 }
 
-// ------------------------------------------------------------------ journal et demo
+// ------------------------------------------------------------------ journal
 
 const journal = document.getElementById("journal");
 function ajouterJournal(texte) {
@@ -516,23 +612,6 @@ function ajouterJournal(texte) {
 document.getElementById("bouton-journal").addEventListener("click", (ev) => {
   ev.stopPropagation();
   journal.classList.toggle("cache");
-});
-
-// Demo : rejoue de faux evenements pour voir l'animation. Ne lance rien,
-// ne touche a aucun fichier.
-document.getElementById("bouton-demo").addEventListener("click", (ev) => {
-  ev.stopPropagation();
-  const faux = {
-    chercher: ["instagram.com/reel/DcJCJ4Wqb9q", "instagram.com/p/DcRCbwwgBCJ", "tiktok.com/@velo/video/73", "instagram.com/reel/Db8x2"],
-    recolter: ["3 cols mythiques des Pyrénées", "Recette de granola maison", "Raccourcis Hyprland à connaître", "Lisbonne : 5 adresses"],
-    resumer: ["Cols des Pyrénées à vélo", "Granola croustillant sans sucre", "Hyprland : 10 raccourcis", "Lisbonne hors des sentiers"],
-    classer: ["Cols → Vélo & cyclisme", "Granola → Cuisine", "Hyprland → Tech & logiciels", "Lisbonne → Voyages"],
-  };
-  const genres = { chercher: "lien", recolter: "reel", resumer: "resume", classer: "fiche" };
-  Object.keys(faux).forEach((de, i) => setTimeout(() => {
-    for (let n = 0; n < 3; n++) faux[de].forEach((l) => lancerParticule(de, genres[de], l));
-  }, i * 1800));
-  setTimeout(() => { for (let n = 0; n < 18; n++) lancerParticule("construire", "fiche", null); }, 4 * 1800);
 });
 
 // ------------------------------------------------------------------ demarrage

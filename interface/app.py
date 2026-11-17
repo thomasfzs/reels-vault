@@ -32,12 +32,14 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 import webbrowser
 from pathlib import Path
+from urllib.parse import quote
 
 import webview
 
@@ -90,7 +92,8 @@ def calculer_etat():
     attente = nettoyer_attente()
 
     # etape 3 : memes calculs que resumer.py, sans rien envoyer
-    a_resumer = [f for f in lire_toutes_les_fiches(DOSSIER) if f["id"] not in resumes]
+    toutes = lire_toutes_les_fiches(DOSSIER)
+    a_resumer = [f for f in toutes if f["id"] not in resumes]
     lots = [a_resumer[i:i + resumer.FICHES_PAR_APPEL]
             for i in range(0, len(a_resumer), resumer.FICHES_PAR_APPEL)]
     entree_r, sortie_r = resumer.estimer(lots, DOSSIER, "vision")
@@ -102,6 +105,18 @@ def calculer_etat():
         appels_c, entree_c, sortie_c = classer.estimer(resumes, taxo, a_classer)
     else:
         appels_c = entree_c = sortie_c = 0
+
+    # mode auto : on ne connait pas encore les reels qui seront trouves, donc
+    # on donne un cout moyen par reel, estime sur les 100 dernieres fiches
+    echantillon = toutes[-100:]
+    if echantillon:
+        e, s_ = resumer.estimer([echantillon[i:i + resumer.FICHES_PAR_APPEL]
+                                 for i in range(0, len(echantillon), resumer.FICHES_PAR_APPEL)],
+                                DOSSIER, "vision")
+        par_reel_resumer = (e + s_) // len(echantillon)
+    else:
+        par_reel_resumer = 3000
+    par_reel_classer = classer.TOKENS_SORTIE_PAR_FICHE + 60  # une ligne par fiche dans le prompt
 
     # etape 5 : a refaire si les donnees sont plus recentes que index.md
     index = DOSSIER / "index.md"
@@ -130,6 +145,8 @@ def calculer_etat():
             "modele_arborescence": classer.MODELE_ARBORESCENCE,
         },
         "construire": {"a_faire": a_construire, "jamais": not index.exists()},
+        "auto": {"par_reel": par_reel_resumer + par_reel_classer,
+                 "secondes_par_reel": mettre_a_jour.SECONDES_PAR_REEL},
         "vault": {
             "reels": len(list(fiches.glob("*.md"))) if fiches.exists() else 0,
             "recoltes": len(list(raw.glob("*.md"))) if raw.exists() else 0,
@@ -137,6 +154,69 @@ def calculer_etat():
             "themes": sum(len(d.get("themes", [])) for d in taxo.get("domaines") or []),
         },
     }
+
+
+# ---------------------------------------------------------------- Obsidian
+
+def obsidian_installe():
+    """Obsidian est-il installe ? (on regarde ou il s'installe selon le systeme)"""
+    if sys.platform.startswith("linux"):
+        if shutil.which("obsidian"):
+            return True
+        if shutil.which("flatpak") and subprocess.run(
+                ["flatpak", "info", "md.obsidian.Obsidian"], capture_output=True).returncode == 0:
+            return True
+        r = subprocess.run(["xdg-mime", "query", "default", "x-scheme-handler/obsidian"],
+                           capture_output=True, text=True) if shutil.which("xdg-mime") else None
+        return bool(r and r.stdout.strip())
+    if sys.platform == "darwin":
+        return any(Path(d, "Obsidian.app").exists() for d in ("/Applications", Path.home() / "Applications"))
+    if os.name == "nt":
+        try:
+            import winreg
+            winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, "obsidian").Close()
+            return True
+        except OSError:
+            return Path(os.environ.get("LOCALAPPDATA", ""), "Programs", "Obsidian", "Obsidian.exe").exists()
+    return False
+
+
+def fichier_config_obsidian():
+    """obsidian.json : la liste des coffres connus d'Obsidian."""
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "obsidian" / "obsidian.json"
+    if os.name == "nt":
+        return Path(os.environ.get("APPDATA", ""), "obsidian", "obsidian.json")
+    flatpak = Path.home() / ".var/app/md.obsidian.Obsidian/config/obsidian/obsidian.json"
+    if flatpak.exists():
+        return flatpak
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"), "obsidian", "obsidian.json")
+
+
+def enregistrer_coffre():
+    """Ajoute ce dossier a la liste des coffres d'Obsidian s'il n'y est pas :
+    sans ca, Obsidian ne saurait pas ouvrir le lien obsidian://open?path=..."""
+    chemin = fichier_config_obsidian()
+    try:
+        config = charger_json(chemin, {})
+        coffres = config.setdefault("vaults", {})
+        if any(Path(v.get("path", "")) == DOSSIER for v in coffres.values()):
+            return
+        coffres[os.urandom(8).hex()] = {"path": str(DOSSIER), "ts": int(time.time() * 1000)}
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(json.dumps(config), encoding="utf-8")
+    except (OSError, ValueError):
+        pass  # au pire, Obsidian proposera de choisir le dossier
+
+
+def ouvrir_url(url):
+    """Ouvre un lien avec l'appli prevue par le systeme (ici : Obsidian)."""
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", url])
+    elif os.name == "nt":
+        os.startfile(url)  # noqa: S606
+    else:
+        subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 # ---------------------------------------------------------------- surveillance
@@ -229,6 +309,8 @@ class Api:
         self.fenetre = None
         self.processus = None
         self.etape_en_cours = None
+        self.occupe = False      # une etape (ou la chaine auto) tourne
+        self.stop_auto = False
         self.verrou = threading.Lock()
         self.surveillant = Surveillant(self._envoyer)
 
@@ -247,6 +329,8 @@ class Api:
     def etat(self):
         etat = calculer_etat()
         etat["en_cours"] = self.etape_en_cours
+        etat["obsidian"] = obsidian_installe()
+        etat["systeme"] = sys.platform
         return etat
 
     # -- reglages (premiere utilisation)
@@ -265,33 +349,85 @@ class Api:
             file_types=("Export Instagram (*.zip;*.json)", "Tous les fichiers (*.*)"))
         return choix[0] if choix else None
 
-    def ouvrir_vault(self):
-        page = DOSSIER / "vault.html"
-        if page.exists():
-            webbrowser.open(page.as_uri())
+    # -- Obsidian
+    def ouvrir_obsidian(self):
+        """Clic sur la bulle Vault : ouvre le coffre dans Obsidian."""
+        if not obsidian_installe():
+            return {"ok": False, "raison": "absent"}
+        enregistrer_coffre()
+        ouvrir_url("obsidian://open?path=" + quote(str(DOSSIER)))
+        return {"ok": True}
 
-    # -- lancement d'une etape
+    def ouvrir_lien(self, url):
+        if url.startswith("https://"):
+            webbrowser.open(url)
+
+    # -- lancement : une etape, ou toute la chaine
     def lancer(self, etape, export=None):
+        """Lance une seule etape (clic sur sa bulle)."""
         with self.verrou:
-            if self.etape_en_cours:
-                return {"ok": False, "message": f"L'etape « {self.etape_en_cours} » tourne deja."}
-            self.etape_en_cours = etape
-        cible = {"chercher": self._chercher, "recolter": self._recolter,
-                 "resumer": self._resumer, "classer": self._classer,
-                 "construire": self._construire}[etape]
-        threading.Thread(target=self._executer, args=(etape, cible, export), daemon=True).start()
+            if self.occupe:
+                return {"ok": False, "message": "Une etape tourne deja."}
+            self.occupe = True
+        threading.Thread(target=self._seul, args=(etape, export), daemon=True).start()
+        return {"ok": True}
+
+    def lancer_tout(self, export=None):
+        """Mode auto : enchaine toutes les etapes qui ont du travail, sans
+        redemander (tu as valide une fois, pour toute la chaine)."""
+        with self.verrou:
+            if self.occupe:
+                return {"ok": False, "message": "Une etape tourne deja."}
+            self.occupe = True
+        self.stop_auto = False
+        threading.Thread(target=self._chaine, args=(export,), daemon=True).start()
         return {"ok": True}
 
     def arreter(self):
-        """Arrete le script en cours. Sans danger : chaque script reprend la
-        ou il s'est arrete au prochain lancement."""
+        """Arrete le script en cours (et la chaine auto). Sans danger : chaque
+        script reprend la ou il s'est arrete au prochain lancement."""
+        self.stop_auto = True
         if self.processus and self.processus.poll() is None:
             self._log("Arret demande...")
             self.processus.terminate()
             return True
         return False
 
-    def _executer(self, etape, cible, export):
+    def _seul(self, etape, export):
+        try:
+            self._executer(etape, export)
+        finally:
+            self.occupe = False
+
+    def _chaine(self, export):
+        self._envoyer({"type": "auto", "actif": True})
+        try:
+            for etape in ORDRE[:-1]:
+                if self.stop_auto:
+                    break
+                e = calculer_etat()
+                rien = {
+                    "recolter": not e["recolter"]["attente"],
+                    "resumer": not e["resumer"]["a_faire"],
+                    "classer": not e["classer"]["a_faire"] and not e["classer"]["premiere_fois"],
+                    "construire": not e["construire"]["a_faire"],
+                }.get(etape, False)
+                if rien:
+                    continue  # rien a faire a cette etape : on passe a la suivante
+                # meme si une etape echoue (ex. Instagram bloque la recolte),
+                # on continue avec ce qui a deja ete fait
+                self._executer(etape, export if etape == "chercher" else None)
+        finally:
+            final = self.etat()
+            final["en_cours"] = None
+            self._envoyer({"type": "auto", "actif": False, "etat": final})
+            self.occupe = False
+
+    def _executer(self, etape, export=None):
+        cible = {"chercher": self._chercher, "recolter": self._recolter,
+                 "resumer": self._resumer, "classer": self._classer,
+                 "construire": self._construire}[etape]
+        self.etape_en_cours = etape
         self._envoyer({"type": "debut", "etape": etape})
         self._log(f"── {etape} ──")
         self.surveillant.demarrer()
@@ -304,8 +440,6 @@ class Api:
         finally:
             self.surveillant.arreter()
             self.processus = None
-        # l'etat final est calcule AVANT de liberer la place : ainsi aucune
-        # autre etape ne peut demarrer entre-temps et recevoir ce "fin" par erreur
         final = calculer_etat()
         final["en_cours"] = None
         self._envoyer({"type": "fin", "etape": etape, "code": code, "message": message,

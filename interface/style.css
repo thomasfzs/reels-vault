@@ -29,6 +29,9 @@ header {
 header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .02em; }
 #statut { color: var(--texte-doux); font-size: 13px; }
 
+#bouton-auto { position: fixed; top: 14px; right: 20px; }
+#bouton-auto.encours { background: #1d222c; border-color: var(--actif); color: var(--actif); font-weight: 500; }
+
 /* ------------------------------------------------------------ bulles */
 
 .bulle {
@@ -55,7 +58,7 @@ header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .02em;
 /* ------------------------------------------------------------ carte */
 
 #carte {
-  position: absolute; width: 320px; padding: 16px 18px;
+  position: absolute; width: 340px; padding: 16px 18px;
   background: var(--carte); border: 1px solid var(--bord); border-radius: 14px;
   backdrop-filter: blur(8px); box-shadow: 0 12px 40px #0008;
   transition: opacity .2s ease, transform .2s ease;
@@ -65,6 +68,9 @@ header h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: .02em;
 #carte h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
 #carte p { margin: 6px 0; color: #c9c7c2; }
 #carte .petit { font-size: 12px; color: var(--texte-doux); }
+#carte .liste { margin: 8px 0; padding-left: 18px; color: #c9c7c2; font-size: 13px; }
+#carte .liste li { margin: 4px 0; }
+#carte code { background: #0c0e13; padding: 1px 5px; border-radius: 5px; font-size: 12px; }
 #carte .estimation {
   margin: 10px 0; padding: 10px 12px; border-radius: 10px;
   background: #ffb86b14; border: 1px solid #ffb86b33; font-size: 13px;

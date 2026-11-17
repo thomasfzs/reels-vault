@@ -6,8 +6,6 @@ taxonomie.json. Aucun appel a Claude ici : c'est du templating pur, instantane.
 Produit :
   - index.md    : le catalogue compact (une ligne par video), range par
                   domaine > theme. Claude le lit en premier pour s'orienter.
-  - vault.html  : page autonome hors ligne (recherche + filtres), a ouvrir
-                  d'un double-clic, lisible sur telephone.
   - fiches/     : une note Obsidian par video (resume, infos, images, lien).
   - themes/     : une note par domaine et par theme, qui relie les fiches
                   (c'est ce qui dessine le graphe dans Obsidian).
@@ -20,7 +18,6 @@ Usage :
 """
 
 import argparse
-import html
 import json
 import re
 import shutil
@@ -169,23 +166,6 @@ def ecrire_obsidian(vault, fiches, arbo, description_de):
             (dossier / f"{nom_de_fichier(t)}.md").write_text("\n".join(lignes) + "\n", encoding="utf-8")
 
 
-# ---------------------------------------------------------------- vault.html
-
-def ecrire_html(vault, fiches, arbo):
-    donnees = [{
-        "t": f["titre"], "r": f["resume"], "i": f["infos"], "a": f["auteur"],
-        "l": f["lien"], "f": f["format"], "th": f["themes"], "k": f["mots_cles"],
-        "img": f["images"][0] if f["images"] else "", "x": f["exploitable"],
-    } for f in fiches]
-    gabarit = (DOSSIER_PROJET / "gabarit_vault.html").read_text(encoding="utf-8")
-    page = (gabarit
-            .replace("__DONNEES__", json.dumps(donnees, ensure_ascii=False).replace("</", "<\\/"))
-            .replace("__ARBO__", json.dumps(arbo, ensure_ascii=False))
-            .replace("__TOTAL__", str(len(fiches)))
-            .replace("__DATE__", html.escape(f"{date.today():%d/%m/%Y}")))
-    (vault / "vault.html").write_text(page, encoding="utf-8")
-
-
 # ---------------------------------------------------------------- reglages Obsidian
 
 COULEURS_DOMAINES = [0xE07A5A, 0x4CC3A3, 0x6EA8FE, 0xE5B84B, 0xB57EDC,
@@ -227,9 +207,8 @@ def main():
         return
     ecrire_index(vault, fiches, arbo, description_de)
     ecrire_obsidian(vault, fiches, arbo, description_de)
-    ecrire_html(vault, fiches, arbo)
     regler_obsidian(vault, arbo)
-    print(f"{len(fiches)} fiches -> index.md, vault.html, fiches/, themes/")
+    print(f"{len(fiches)} fiches -> index.md, fiches/, themes/")
     print(f"Obsidian : ouvre le dossier {vault.resolve()} comme coffre, puis Ctrl+G pour le graphe.")
 
 
